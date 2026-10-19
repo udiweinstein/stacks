@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>דוח הגשות</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; margin: 24px; background: #f4f6f8; color: #222; }
+  h1 { margin: 0 0 20px; color: #2c3e50; font-size: 1.5rem; }
+
+  .filters {
+    background: white; padding: 16px 20px; border-radius: 10px;
+    margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .filters h2 { margin: 0 0 10px; font-size: 0.95rem; color: #555; }
+
+  .controls-row {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 14px 16px;
+    margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #eee;
+  }
+  .control-group { display: flex; align-items: center; gap: 8px; }
+  .control-sep { width: 1px; height: 28px; background: #ddd; flex-shrink: 0; }
+  .controls-row label { font-size: 0.88rem; color: #444; white-space: nowrap; }
+  .controls-row .ttl { font-weight: 600; color: #2c3e50; }
+  .opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .opt input { accent-color: #2980b9; cursor: pointer; margin: 0; }
+  .controls-row input[type=range] { width: 130px; accent-color: #2980b9; }
+  .val {
+    font-weight: bold; font-size: 0.92rem; color: #2980b9;
+    min-width: 40px; text-align: center;
+  }
+  .controls-row select {
+    font-size: 0.83rem; padding: 3px 6px; border: 1px solid #ccc;
+    border-radius: 6px; background: white; color: #333; max-width: 200px;
+  }
+  .hint { font-size: 0.78rem; color: #999; }
+
+  .filter-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .filter-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: #eef2f7; border: 2px solid transparent;
+    padding: 5px 6px 5px 11px; border-radius: 20px; cursor: pointer;
+    transition: all 0.15s; font-size: 0.85rem; user-select: none;
+  }
+  .filter-chip.active { background: #d6e4f0; border-color: #2980b9; }
+  .filter-chip.blocked { background: #f0f0f0; color: #aaa; text-decoration: line-through; }
+  .filter-chip.forced  { border: 2px dashed #e67e22; background: #fdf2e6; }
+  .filter-chip.out-range { opacity: 0.35; cursor: default; }
+  .filter-chip.open { box-shadow: 0 0 0 3px #f1c40f66; }
+  .chip-rate { font-size: 0.75rem; opacity: 0.75; text-decoration: none; }
+  .chip-ex {
+    font-size: 0.75rem; background: #fff; border-radius: 10px; padding: 1px 7px;
+    color: #2980b9; border: 1px solid #c9d8e6; text-decoration: none;
+  }
+  .chip-ex:hover { background: #2980b9; color: #fff; }
+
+  .ex-panel {
+    margin-top: 12px; border: 1px solid #e2e8ef; border-radius: 8px;
+    padding: 10px 14px; background: #fafcfe; font-size: 0.85rem;
+  }
+  .ex-panel h3 { margin: 0 0 8px; font-size: 0.9rem; color: #2c3e50; }
+  .ex-panel .cls-title { font-weight: 600; color: #555; margin: 8px 0 4px; }
+  .ex-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ex-item {
+    display: flex; align-items: center; gap: 6px; padding: 4px 10px;
+    border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer;
+  }
+  .ex-item.on  { border-color: #27ae60; background: #eafaf0; }
+  .ex-item.off { color: #aaa; text-decoration: line-through; }
+  .ex-item .mode { font-size: 0.7rem; color: #e67e22; text-decoration: none; }
+  .ex-panel .hint { margin-top: 8px; }
+
+  .actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    padding: 5px 14px; border: 1px solid #ccc; border-radius: 6px;
+    cursor: pointer; background: white; font-size: 0.82rem; transition: background 0.1s;
+  }
+  .btn:hover { background: #e8e8e8; }
+
+  .table-wrap { overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+  table { border-collapse: collapse; width: 100%; background: white; min-width: 600px; }
+  thead th {
+    background: #2c3e50; color: white; padding: 11px 14px;
+    white-space: nowrap; cursor: pointer; user-select: none;
+    font-size: 0.88rem; font-weight: 600;
+  }
+  thead th:hover { background: #3d5166; }
+  thead th.name-col { text-align: right; }
+  thead th .arrow { font-size: 0.7rem; margin-right: 3px; }
+  td { padding: 9px 14px; text-align: center; border-bottom: 1px solid #eef; font-size: 0.88rem; }
+  td.name-col { text-align: right; font-weight: 500; white-space: nowrap; }
+  td.na { color: #ccc; }
+  tr:hover td { background: #f7f9fb; }
+  tr.avg-row td { background: #eef2f7; font-weight: bold; border-top: 2px solid #c9d3de; }
+
+  .badge {
+    display: inline-block; border-radius: 5px; padding: 2px 8px;
+    font-weight: bold; font-size: 0.85rem; min-width: 42px;
+  }
+  .badge.high { background: #d4edda; color: #155724; }
+  .badge.mid  { background: #fff3cd; color: #7d6008; }
+  .badge.low  { background: #f8d7da; color: #721c24; }
+  .sub-count { font-size: 0.75rem; color: #888; display: block; margin-top: 2px; }
+  .flag { font-size: 0.72rem; margin-right: 3px; cursor: help; }
+  .flag.sus  { color: #c0392b; }
+  .flag.late { color: #8e44ad; }
+
+  /* תצוגת תרגולים ותרגילים */
+  thead tr.sub-head th { background: #3d5166; font-size: 0.78rem; font-weight: 500; padding: 7px 10px; }
+  thead th.grp-head { text-align: center; }
+  th.grp-start, td.grp-start { border-right: 2px solid #c9d3de; }
+  thead th.grp-start { border-right-color: #1a252f; }
+  th.ex-off { color: #8a99a8; text-decoration: line-through; }
+  td.ex-col { background: #fbfcfd; padding: 6px 8px; }
+  .badge.sm { min-width: 30px; font-size: 0.78rem; padding: 1px 6px; }
+
+  #nameFilter {
+    font-size: 0.85rem; padding: 4px 8px; border: 1px solid #ccc; border-radius: 6px; width: 150px;
+  }
+  td.name-col .stu { cursor: pointer; }
+  td.name-col .stu:hover { text-decoration: underline; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+
+  /* גרף */
+  .chart-card {
+    background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    padding: 16px 20px; margin-top: 24px;
+  }
+  .chart-card h2 { margin: 0 0 8px; font-size: 1rem; color: #2c3e50; }
+  .chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 0.82rem; color: #444; margin-bottom: 6px; }
+  .chart-legend .item { display: flex; align-items: center; gap: 6px; }
+  .chart-legend .sw { width: 18px; height: 0; border-top: 2px solid; }
+  .chart-legend .sw.avg { border-top: 3px dashed #2c3e50; }
+  .chart-legend .sw.rest { border-top-color: #c5ccd3; }
+  .chart-legend .x { cursor: pointer; color: #999; padding: 0 2px; }
+  .chart-legend .x:hover { color: #c0392b; }
+  .chart-legend .hint { color: #999; font-size: 0.78rem; }
+  .chart-box { position: relative; }
+  #chart svg { display: block; direction: ltr; }
+  .chart-tip {
+    position: absolute; pointer-events: none; background: #fff; border: 1px solid #dde3ea;
+    border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); padding: 8px 10px;
+    font-size: 0.8rem; color: #333; display: none; min-width: 150px; z-index: 5;
+  }
+  .chart-tip .tt { font-weight: 600; margin-bottom: 2px; }
+  .chart-tip .muted { color: #999; font-size: 0.75rem; margin-bottom: 4px; }
+  .chart-tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+  .chart-tip .row b { font-variant-numeric: tabular-nums; }
+
+  td.overall-col { background: #f0f4f8; font-weight: bold; }
+  thead th.overall-col { background: #1a252f; }
+
+  .summary { margin-top: 12px; font-size: 0.82rem; color: #888; }
+  .legend { margin-top: 6px; font-size: 0.78rem; color: #999; }
+  .empty-msg { text-align: center; padding: 40px; color: #aaa; }
+</style>
+<style>
+  .drop {
+    max-width: 640px; margin: 8vh auto; background: #fff; border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 44px 32px; text-align: center;
+    border: 2px dashed #b9c8d8; transition: all 0.15s;
+  }
+  .drop h1 { margin: 6px 0 10px; }
+  .drop p { color: #555; margin: 8px 0; }
+  .drop-icon { font-size: 2.6rem; }
+  .drop .btn.primary {
+    display: inline-block; background: #2980b9; color: #fff; border-color: #2980b9;
+    padding: 8px 22px; font-size: 0.95rem; margin: 8px 0 4px;
+  }
+  .drop .btn.primary:hover { background: #2471a3; }
+  .drop .cols { font-size: 0.78rem; color: #999; margin-top: 18px; line-height: 1.6; }
+  .drop-err {
+    margin-top: 16px; color: #721c24; background: #f8d7da; border-radius: 8px;
+    padding: 10px 14px; display: none; white-space: pre-line; text-align: right; font-size: 0.85rem;
+  }
+  body.dragging .drop, body.dragging #topbar { border-color: #2980b9; background: #eef6fc; }
+  #topbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 0.85rem; color: #555;
+    background: #fff; border: 2px dashed transparent; border-radius: 10px; padding: 8px 14px;
+    margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  #topbar[hidden] { display: none; }
+  #drop[hidden] { display: none; }
+</style>
+
+</head>
+<body>
+
+<div id="drop" class="drop">
+  <div class="drop-icon">📄</div>
+  <h1>דוח הגשות</h1>
+  <p>גרור לכאן קובץ נתונים (CSV)</p>
+  <label class="btn primary">או בחר קובץ<input type="file" id="fileInput" accept=".csv,text/csv,text/plain" hidden></label>
+  <p class="hint">הקובץ נקרא במחשב שלך בלבד ולא נשלח לשום מקום.</p>
+  <div class="cols">עמודות נדרשות: שם תלמיד, תרגול, תרגיל, סטטוס<br>
+    מומלצות: כתה, שם משתמש, תרגיל2, תאריך פתיחה, ציון, ציון עבודה עצמית</div>
+  <div id="dropErr" class="drop-err"></div>
+</div>
+<div id="topbar" hidden>
+  <span>קובץ: <b id="fileName"></b></span>
+  <label class="btn">טען קובץ אחר<input type="file" id="fileInput2" accept=".csv,text/csv,text/plain" hidden></label>
+  <span class="hint">אפשר גם לגרור קובץ חדש לכל מקום בדף</span>
+</div>
+
+<div id="report" hidden>
+<h1 id="reportTitle">דוח הגשות</h1>
+
+<div class="filters">
+  <div class="controls-row">
+    <div class="control-group" id="classGroup">
+      <label class="ttl">כיתה:</label>
+      <select id="classSelect"></select>
+    </div>
+    <div class="control-sep" id="classSep"></div>
+    <div class="control-group">
+      <label class="ttl">תלמיד:</label>
+      <input type="search" id="nameFilter" placeholder="סינון לפי שם…" autocomplete="off">
+    </div>
+    <div class="control-sep"></div>
+    <div class="control-group">
+      <label class="ttl">מדד:</label>
+      <label class="opt"><input type="radio" name="measure" value="submit" checked> הגשה</label>
+      <label class="opt"><input type="radio" name="measure" value="grade"> ציון</label>
+    </div>
+    <div class="control-sep"></div>
+    <div class="control-group">
+      <label class="ttl">הצג:</label>
+      <label class="opt"><input type="radio" name="show" value="targol" checked> תרגולים</label>
+      <label class="opt"><input type="radio" name="show" value="both"> תרגולים ותרגילים</label>
+    </div>
+  </div>
+
+  <div class="controls-row">
+    <div class="control-group" title="תרגיל או תרגול שפחות מאחוז זה מהכיתה הגישו — לא נחשב כנדרש">
+      <label class="ttl">הגשה מינימלית של הכיתה:</label>
+      <input type="range" id="threshold" min="0" max="100" value="0" step="5">
+      <span class="val" id="thresholdVal">0%</span>
+    </div>
+    <div class="control-sep"></div>
+    <div class="control-group" title="תרגיל עם ציון עבודה עצמית נמוך מזה נחשב חשוד">
+      <label class="ttl">ציון עבודה עצמית מינימלי:</label>
+      <input type="range" id="selfMin" min="0" max="100" value="0" step="5">
+      <span class="val" id="selfMinVal">כבוי</span>
+      <select id="selfAction">
+        <option value="zero">תרגיל חשוד = 0</option>
+        <option value="mark">סמן בלבד</option>
+      </select>
+    </div>
+    <div class="control-sep"></div>
+    <div class="control-group" title="כמה אחוזים להוריד מתרגיל שהוגש באיחור">
+      <label class="ttl">הורדה על איחור:</label>
+      <input type="range" id="latePenalty" min="0" max="100" value="0" step="5">
+      <span class="val" id="latePenaltyVal">0%</span>
+    </div>
+  </div>
+
+  <div class="controls-row" style="border-bottom:none; margin-bottom:6px; padding-bottom:0">
+    <div class="control-group">
+      <label class="ttl">טווח תרגולים:</label>
+      <label>מ-</label><select id="rangeFrom"></select>
+      <label>עד-</label><select id="rangeTo"></select>
+    </div>
+  </div>
+
+  <h2>תרגולים:</h2>
+  <div class="filter-grid" id="filterGrid"></div>
+  <div id="exPanel"></div>
+  <div class="actions">
+    <button class="btn" id="btnAll">בחר הכל</button>
+    <button class="btn" id="btnNone">בטל הכל</button>
+    <button class="btn" id="btnReset">אפס בחירות ידניות</button>
+  </div>
+  <div class="hint" style="margin-top:8px">
+    לחיצה על תרגול — הצג/הסתר. תרגול מחוק (מתחת לסף) — לחיצה כוללת אותו ידנית.
+    כפתור "תרגילים" — בחירת התרגילים הנדרשים בתרגול.
+  </div>
+</div>
+
+<div class="table-wrap" id="tableWrap"></div>
+<div class="summary" id="summary"></div>
+<div class="legend">
+  <span class="flag sus">⚠</span> תרגיל עם ציון עבודה עצמית נמוך מהסף &nbsp;
+  <span class="flag late">⏱</span> הוגש באיחור &nbsp;
+  · תרגיל לא נדרש (בתצוגת תרגילים) &nbsp;
+  ריחוף על תא מציג פירוט לפי תרגילים. לחיצה על שם תלמיד מדגישה אותו בגרף.
+</div>
+
+<div class="chart-card">
+  <h2 id="chartTitle"></h2>
+  <div class="chart-legend" id="chartLegend"></div>
+  <div class="chart-box" id="chartBox">
+    <div id="chart"></div>
+    <div class="chart-tip" id="chartTip"></div>
+  </div>
+</div>
+</div><!-- /#report -->
+
+<script>
+// גלובלי אחד לשינוי גודל חלון — מפנה לדוח הפעיל (גם אם הדוח נטען מחדש מקובץ אחר)
+window.addEventListener('resize', () => window.__reportResize && window.__reportResize());
+
+// ─── הדוח: מופעל עם הנתונים (מוטמעים בדף, או מקובץ שנגרר בגרסת ההעלאה) ───
+function startReport(D) {
+const MULTI = D.classes.length > 1;
+const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
+const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
+
+const S = {
+  cls: 'all', measure: 'submit', show: 'targol', q: '',
+  threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
+  from: 0, to: D.targolim.length - 1,
+  sortCol: 'name', sortDir: 1, openT: null,
+};
+const selected = new Set(D.targolim);
+const exOverride = {};   // key(t, ex) -> 'in' | 'out'
+const tOverride  = {};   // t -> 'in'
+const key = (t, e) => t + '\u0001' + e;
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const r1 = x => Math.round(x);
+
+// ─── שלב 1: מה נדרש — סף כיתתי ברמת תרגיל ואז ברמת תרגול (לכל כיתה בנפרד) ───
+let R = {};  // R[cls][t] = {exRate[], eligEx[], sub, tot, rate, elig}
+
+function computeRequirements() {
+  R = {};
+  for (const c of D.classes) {
+    R[c] = {};
+    const studs = D.students.filter(s => s.cls === c);
+    for (const t of D.targolim) {
+      const exs = (D.ex[c] || {})[t];
+      if (!exs) continue;
+      const exRate = exs.map((_, i) => {
+        if (!studs.length) return 0;
+        let n = 0;
+        for (const s of studs) if (s.d[t][i][0] !== ST_NONE) n++;
+        return n / studs.length * 100;
+      });
+      let eligEx = exs.map((e, i) => {
+        const o = exOverride[key(t, e)];
+        return o ? o === 'in' : exRate[i] >= S.threshold;
+      });
+      // תרגול שנכלל ידנית וכל תרגיליו מתחת לסף — כל התרגילים שלא הוצאו ידנית נכללים
+      if (tOverride[t] === 'in' && !eligEx.some(Boolean))
+        eligEx = exs.map(e => exOverride[key(t, e)] !== 'out');
+      const count = pick => {
+        let sub = 0, tot = 0;
+        exs.forEach((_, i) => {
+          if (!pick(i)) return;
+          for (const s of studs) { tot++; if (s.d[t][i][0] !== ST_NONE) sub++; }
+        });
+        return [sub, tot];
+      };
+      const any = eligEx.some(Boolean);
+      // שיעור ההגשה של התרגול — על התרגילים הנדרשים, ואם אין כאלה — על כולם
+      const [sub, tot] = count(any ? i => eligEx[i] : () => true);
+      const rate = tot ? sub / tot * 100 : 0;
+      const elig = any && (tOverride[t] === 'in' || rate >= S.threshold);
+      R[c][t] = { exRate, eligEx, sub, tot, rate, elig };
+    }
+  }
+}
+
+function shownClasses() { return S.cls === 'all' ? D.classes : [S.cls]; }
+D.students.forEach((s, i) => s.id = i);
+function shownStudents() { return S.cls === 'all' ? D.students : D.students.filter(s => s.cls === S.cls); }
+// אחרי סינון השם — אלה השורות בטבלה והקווים בגרף
+function filteredStudents() {
+  const q = S.q.trim();
+  return q ? shownStudents().filter(s => s.name.includes(q)) : shownStudents();
+}
+function applicable(t) { return shownClasses().some(c => R[c][t]); }
+function inRange(t) { const i = D.targolim.indexOf(t); return i >= S.from && i <= S.to; }
+function eligibleView(t) { return shownClasses().some(c => R[c][t] && R[c][t].elig); }
+function viewRate(t) {
+  let sub = 0, tot = 0;
+  for (const c of shownClasses()) if (R[c][t]) { sub += R[c][t].sub; tot += R[c][t].tot; }
+  return tot ? sub / tot * 100 : 0;
+}
+function visibleTargolim() {
+  return D.targolim.filter(t => applicable(t) && inRange(t) && eligibleView(t) && selected.has(t));
+}
+
+// ─── שלב 2: חישוב ערך לתלמיד בתרגול ───
+// מחזיר null אם התרגול לא נדרש מהתלמיד
+function cellVal(s, t) {
+  const r = (R[s.cls] || {})[t];
+  if (!r || !r.elig) return null;
+  const p = S.late / 100;
+  let cs = 0, gs = 0, cnt = 0, done = 0, sus = 0, late = 0;
+  const det = [];
+  const exv = {};   // שם תרגיל -> תוצאה לתרגיל הבודד (לתצוגת "תרגולים ותרגילים")
+  D.ex[s.cls][t].forEach((e, i) => {
+    const [st, g, sw] = s.d[t][i];
+    const parts = [`${e}: ${ST_LABEL[st]}`];
+    if (g != null && st !== ST_NONE) parts.push(`ציון ${g}`);
+    if (sw != null && st !== ST_NONE) parts.push(`עצמית ${sw}`);
+    if (!r.eligEx[i]) {
+      const line = parts.join(' | ') + '  (לא נדרש)';
+      det.push(line); exv[e] = { req: false, line }; return;
+    }
+
+    let ok = st !== ST_NONE, isSus = false;
+    const isLate = st === ST_LATE;
+    if (ok && S.selfMin > 0 && sw != null && sw < S.selfMin) {
+      sus++; isSus = true; parts.push('⚠ חשוד');
+      if (S.selfAction === 'zero') { ok = false; parts.push('→ 0'); }
+    }
+    const factor = ok ? (isLate ? 1 - p : 1) : 0;
+    if (ok && isLate) { late++; if (p > 0) parts.push(`−${S.late}%`); }
+    cnt++; if (ok) done++;
+    const gv = ok ? (g || 0) * factor : 0;
+    cs += factor;
+    gs += gv;
+    const line = parts.join(' | ');
+    det.push(line);
+    exv[e] = { req: true, ok, sus: isSus, late: ok && isLate,
+               val: S.measure === 'submit' ? factor * 100 : gv, line };
+  });
+  if (!cnt) return null;
+  const val = S.measure === 'submit' ? cs / cnt * 100 : gs / cnt;
+  return { val, cs, gs, cnt, done, sus, late, det, exv };
+}
+
+// סה"כ לתלמיד: ממוצע התרגולים הנדרשים — כל תרגול שווה משקל, בלי קשר למספר התרגילים בו
+function overall(s, vis) {
+  let a = 0, n = 0, done = 0, cnt = 0, sus = 0, late = 0;
+  for (const t of vis) {
+    const v = cellVal(s, t);
+    if (!v) continue;
+    a += v.val; n += 1;
+    done += v.done; cnt += v.cnt; sus += v.sus; late += v.late;
+  }
+  return n ? { val: a / n, done, cnt, sus, late } : null;
+}
+
+function badgeClass(v) { return v >= 80 ? 'high' : v >= 50 ? 'mid' : 'low'; }
+
+function cellHTML(v, title) {
+  if (!v) return '-';
+  const shown = S.measure === 'submit' ? r1(v.val) + '%' : r1(v.val);
+  let flags = '';
+  if (v.sus)  flags += `<span class="flag sus" title="${v.sus} תרגילים חשודים">⚠${v.sus > 1 ? v.sus : ''}</span>`;
+  if (v.late) flags += `<span class="flag late" title="${v.late} הוגשו באיחור">⏱${v.late > 1 ? v.late : ''}</span>`;
+  return `<span class="badge ${badgeClass(v.val)}"${title ? ` title="${esc(title)}"` : ''}>${shown}</span>${flags}`
+       + `<span class="sub-count">${v.done}/${v.cnt} הוגשו</span>`;
+}
+
+// תא של תרגיל בודד
+function exCellHTML(x) {
+  if (!x) return '<td class="na ex-col">-</td>';
+  if (!x.req) return `<td class="na ex-col" title="${esc(x.line)}">·</td>`;
+  let txt;
+  if (S.measure === 'submit') txt = !x.ok ? '✗' : x.val >= 100 ? '✓' : r1(x.val) + '%';
+  else txt = r1(x.val);
+  let flags = '';
+  if (x.sus)  flags += '<span class="flag sus">⚠</span>';
+  if (x.late) flags += '<span class="flag late">⏱</span>';
+  return `<td class="ex-col"><span class="badge sm ${x.ok ? badgeClass(x.val) : 'low'}" title="${esc(x.line)}">${txt}</span>${flags}</td>`;
+}
+
+// שמות התרגילים של תרגול בכיתות המוצגות (איחוד, לפי סדר)
+function exNames(t) {
+  const out = [];
+  for (const c of shownClasses()) for (const e of ((D.ex[c] || {})[t] || [])) if (!out.includes(e)) out.push(e);
+  return out;
+}
+// האם התרגיל נדרש לפחות בכיתה מוצגת אחת
+function exReqInView(t, e) {
+  return shownClasses().some(c => {
+    const r = R[c][t];
+    return r && r.elig && r.eligEx[D.ex[c][t].indexOf(e)];
+  });
+}
+const exColKey = (t, e) => 'x\u0002' + t + '\u0002' + e;
+
+// ─── שלב 3: הצגה ───
+function render() {
+  computeRequirements();
+  renderChips();
+  renderPanel();
+  renderTable();
+  renderChart();
+}
+
+// ─── הדגשת תלמידים (טבלה + גרף) ───
+// צבע קבוע לכל תלמיד מודגש — לא משתנה כשמוסיפים/מסירים אחרים. עד 8 בו-זמנית.
+const PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+const MAX_HL = PALETTE.length;
+const picked = new Map();   // sid -> slot
+
+function togglePick(sid) {
+  if (picked.has(sid)) { picked.delete(sid); return true; }
+  if (picked.size >= MAX_HL) return false;
+  const used = new Set(picked.values());
+  let slot = 0; while (used.has(slot)) slot++;
+  picked.set(sid, slot);
+  return true;
+}
+
+// מי מודגש כרגע: התלמידים שנבחרו (מתוך המסוננים); אם לא נבחר אף אחד וסינון השם
+// מצא עד 8 תלמידים — כולם מודגשים אוטומטית.
+function highlightMap() {
+  const fs = new Set(filteredStudents().map(s => s.id));
+  const out = new Map();
+  for (const [sid, slot] of picked) if (fs.has(sid)) out.set(sid, PALETTE[slot]);
+  if (!out.size && S.q.trim() && fs.size <= MAX_HL) {
+    let slot = 0;
+    for (const sid of fs) out.set(sid, PALETTE[slot++]);
+  }
+  return out;
+}
+
+// ─── גרף: ערך כל תלמיד לאורך התרגולים (לפי סדר תאריך הפתיחה) ───
+let chartCtx = null;
+
+function renderChart() {
+  const box = document.getElementById('chart');
+  const tip = document.getElementById('chartTip');
+  const legend = document.getElementById('chartLegend');
+  tip.style.display = 'none';
+  const vis = visibleTargolim();
+  const isGrade = S.measure === 'grade';
+  document.getElementById('chartTitle').textContent =
+    (isGrade ? 'ציון' : 'אחוז הגשה') + ' לאורך זמן — לפי תרגול';
+
+  if (vis.length < 2) {
+    box.innerHTML = '<p class="empty-msg">צריך לפחות שני תרגולים מוצגים כדי להציג מגמה.</p>';
+    legend.innerHTML = ''; chartCtx = null; return;
+  }
+
+  const all = shownStudents(), fs = filteredStudents(), hl = highlightMap();
+  const series = fs.map(s => ({ s, pts: vis.map(t => { const v = cellVal(s, t); return v ? v.val : null; }) }));
+  const avg = vis.map(t => {
+    let a = 0, n = 0;
+    for (const s of all) { const v = cellVal(s, t); if (v) { a += v.val; n++; } }
+    return n ? a / n : null;
+  });
+
+  // מקרא
+  let lg = `<span class="item"><span class="sw avg"></span>ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}</span>`;
+  const hlList = series.filter(x => hl.has(x.s.id));
+  for (const { s } of hlList) {
+    const x = picked.has(s.id) ? `<span class="x" data-sid="${s.id}" title="הסר הדגשה">×</span>` : '';
+    lg += `<span class="item"><span class="sw" style="border-top-color:${hl.get(s.id)}"></span>${esc(s.name)}${x}</span>`;
+  }
+  if (series.length > hlList.length)
+    lg += `<span class="item"><span class="sw rest"></span>${hlList.length ? 'שאר התלמידים' : 'תלמידים'}</span>`;
+  if (picked.size) lg += `<span class="item x" id="clearPicks">נקה הדגשות</span>`;
+  lg += `<span class="hint">לחיצה על קו או על שם בטבלה מדגישה תלמיד (עד ${MAX_HL})</span>`;
+  legend.innerHTML = lg;
+
+  // גאומטריה
+  const W = Math.max(box.clientWidth || 900, 360), H = 380;
+  const longest = Math.max(...vis.map(t => Math.min(t.length, 22)));
+  // תוויות ציר X מוטות ב-35°: רוחב משוער 6px לתו → מקום משמאל ומלמטה
+  const lblW = longest * 6;
+  const M = { t: 14, r: 28, b: 24 + lblW * 0.58, l: Math.max(48, lblW * 0.82 + 10) };
+  const pw = W - M.l - M.r, ph = H - M.t - M.b;
+  const X = i => M.l + i * pw / (vis.length - 1);
+  const Y = v => M.t + (100 - Math.max(0, Math.min(100, v))) / 100 * ph;
+
+  const pathOf = pts => {
+    let d = '', first = true;
+    pts.forEach((v, i) => {
+      if (v == null) return;                 // דילוג על תרגול שלא נדרש — הקו ממשיך לנקודה הבאה
+      d += (first ? 'M' : 'L') + X(i).toFixed(1) + ',' + Y(v).toFixed(1);
+      first = false;
+    });
+    return d;
+  };
+
+  let g = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(document.getElementById('chartTitle').textContent)}">`;
+  // רשת וציר Y
+  for (const v of [0, 25, 50, 75, 100]) {
+    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v ? '#eef1f4' : '#c9d3de'}"/>`;
+    g += `<text x="${M.l - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="#888">${v}${isGrade ? '' : '%'}</text>`;
+  }
+  // ציר X
+  vis.forEach((t, i) => {
+    const lbl = t.length > 22 ? t.slice(0, 21) + '…' : t;
+    g += `<line x1="${X(i)}" x2="${X(i)}" y1="${M.t + ph}" y2="${M.t + ph + 4}" stroke="#c9d3de"/>`;
+    g += `<text transform="translate(${X(i)},${M.t + ph + 14}) rotate(-35)" text-anchor="end" font-size="11" fill="#666">${esc(lbl)}</text>`;
+  });
+  // תלמידים לא מודגשים — אפור, ברקע
+  for (const x of series) if (!hl.has(x.s.id))
+    g += `<path d="${pathOf(x.pts)}" fill="none" stroke="#c5ccd3" stroke-width="1.25" stroke-linejoin="round" opacity="0.8"/>`;
+  // ממוצע
+  g += `<path d="${pathOf(avg)}" fill="none" stroke="#2c3e50" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round"/>`;
+  avg.forEach((v, i) => { if (v != null) g += `<circle cx="${X(i)}" cy="${Y(v)}" r="3.5" fill="#2c3e50" stroke="#fff" stroke-width="2"/>`; });
+  // מודגשים
+  for (const x of hlList) {
+    const c = hl.get(x.s.id);
+    g += `<path d="${pathOf(x.pts)}" fill="none" stroke="${c}" stroke-width="2.25" stroke-linejoin="round"/>`;
+    x.pts.forEach((v, i) => { if (v != null) g += `<circle cx="${X(i)}" cy="${Y(v)}" r="4" fill="${c}" stroke="#fff" stroke-width="2"/>`; });
+  }
+  // שכבת ריחוף
+  g += `<g id="hoverLayer"></g>`;
+  g += `<rect id="hitArea" x="${M.l - 10}" y="${M.t}" width="${pw + 20}" height="${ph}" fill="transparent" style="cursor:crosshair"/>`;
+  g += '</svg>';
+  box.innerHTML = g;
+
+  chartCtx = { vis, series, avg, hl, X, Y, M, ph, W, isGrade, pathOf };
+  const hit = box.querySelector('#hitArea');
+  hit.addEventListener('mousemove', onChartMove);
+  hit.addEventListener('mouseleave', () => { tip.style.display = 'none'; box.querySelector('#hoverLayer').innerHTML = ''; chartCtx.hover = null; });
+  hit.addEventListener('click', () => {
+    if (chartCtx && chartCtx.hover != null) { togglePick(chartCtx.hover); renderTable(); renderChart(); }
+  });
+}
+
+function onChartMove(e) {
+  const c = chartCtx; if (!c) return;
+  const box = document.getElementById('chartBox');
+  const svg = box.querySelector('svg');
+  const r = svg.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const step = (c.W - c.M.l - c.M.r) / (c.vis.length - 1);
+  const i = Math.max(0, Math.min(c.vis.length - 1, Math.round((mx - c.M.l) / step)));
+
+  // התלמיד הקרוב ביותר לסמן (בתוך 14px) בתרגול הזה
+  let best = null, bd = 14;
+  for (const x of c.series) {
+    const v = x.pts[i]; if (v == null) continue;
+    const d = Math.abs(c.Y(v) - my);
+    if (d < bd) { bd = d; best = x; }
+  }
+  c.hover = best ? best.s.id : null;
+
+  const fmt = v => v == null ? '—' : Math.round(v) + (c.isGrade ? '' : '%');
+  let layer = `<line x1="${c.X(i)}" x2="${c.X(i)}" y1="${c.M.t}" y2="${c.M.t + c.ph}" stroke="#2c3e50" stroke-opacity="0.25"/>`;
+  if (best) {
+    const col = c.hl.get(best.s.id) || '#555';
+    layer += `<path d="${c.pathOf(best.pts)}" fill="none" stroke="${col}" stroke-width="3" stroke-linejoin="round"/>`;
+    layer += `<circle cx="${c.X(i)}" cy="${c.Y(best.pts[i])}" r="5" fill="${col}" stroke="#fff" stroke-width="2"/>`;
+  }
+  svg.querySelector('#hoverLayer').innerHTML = layer;
+
+  const t = c.vis[i];
+  let h = `<div class="tt">${esc(t)}</div>`;
+  if (D.dates[t]) h += `<div class="muted">נפתח ${esc(D.dates[t])}</div>`;
+  h += `<div class="row"><span>ממוצע</span><b>${fmt(c.avg[i])}</b></div>`;
+  if (best && !c.hl.has(best.s.id))
+    h += `<div class="row"><span><span class="dot" style="background:#555"></span>${esc(best.s.name)}</span><b>${fmt(best.pts[i])}</b></div>`;
+  const hls = c.series.filter(x => c.hl.has(x.s.id)).sort((a, b) => (b.pts[i] ?? -1) - (a.pts[i] ?? -1));
+  for (const x of hls)
+    h += `<div class="row"><span><span class="dot" style="background:${c.hl.get(x.s.id)}"></span>${esc(x.s.name)}</span><b>${fmt(x.pts[i])}</b></div>`;
+  if (best) h += `<div class="muted" style="margin-top:4px">${c.hl.has(best.s.id) && picked.has(best.s.id) ? 'לחיצה: הסר הדגשה' : 'לחיצה: הדגש'}</div>`;
+
+  const tip = document.getElementById('chartTip');
+  tip.innerHTML = h;
+  tip.style.display = 'block';
+  const bw = box.clientWidth, tw = tip.offsetWidth;
+  let left = mx + 14; if (left + tw > bw) left = mx - tw - 14;
+  tip.style.left = Math.max(0, left) + 'px';
+  tip.style.top = Math.max(0, my - 10) + 'px';
+}
+
+function renderTable() {
+  const vis = visibleTargolim();
+  const wrap = document.getElementById('tableWrap');
+  if (!vis.length) {
+    wrap.innerHTML = '<p class="empty-msg">אין תרגולים להצגה — בחר תרגול או הורד את סף ההגשה.</p>';
+    document.getElementById('summary').textContent = '';
+    return;
+  }
+  const all = shownStudents();          // לממוצע הכיתה — לא מושפע מסינון השם
+  const studs = filteredStudents();     // השורות בטבלה
+  const hl = highlightMap();
+  const cache = new Map();
+  for (const s of all) {
+    const m = {};
+    for (const t of vis) m[t] = cellVal(s, t);
+    m.__overall = overall(s, vis);
+    cache.set(s, m);
+  }
+  const showEx = S.show === 'both';
+  const exCols = {};
+  if (showEx) for (const t of vis) exCols[t] = exNames(t);
+
+  const get = (s, col) => {
+    const m = cache.get(s);
+    if (col.startsWith('x\u0002')) {
+      const [, t, e] = col.split('\u0002');
+      const x = m[t] && m[t].exv[e];
+      return x && x.req ? x.val : -1;
+    }
+    const v = m[col]; return v ? v.val : -1;
+  };
+
+  studs.sort((a, b) => {
+    if (S.sortCol === 'name') return S.sortDir * a.name.localeCompare(b.name, 'he');
+    if (S.sortCol === 'cls')  return S.sortDir * (a.cls.localeCompare(b.cls, 'he') || a.name.localeCompare(b.name, 'he'));
+    const col = S.sortCol === 'overall' ? '__overall' : S.sortCol;
+    return S.sortDir * (get(a, col) - get(b, col));
+  });
+
+  const showCls = MULTI && S.cls === 'all';
+  const th = (col, label, cls = '', extra = '') => {
+    const arrow = S.sortCol === col ? `<span class="arrow">${S.sortDir > 0 ? '↑' : '↓'}</span>` : '';
+    return `<th class="${cls}" data-col="${esc(col)}"${extra}>${esc(label)}${arrow}</th>`;
+  };
+
+  let h = '<table><thead><tr>';
+  const rs = showEx ? ' rowspan="2"' : '';
+  h += th('name', 'שם תלמיד', 'name-col', rs);
+  if (showCls) h += th('cls', 'כיתה', '', rs);
+  h += th('overall', 'סה"כ', 'overall-col', rs);
+  for (const t of vis) {
+    h += showEx ? th(t, t, 'grp-start grp-head', ` colspan="${1 + exCols[t].length}"`) : th(t, t);
+  }
+  h += '</tr>';
+  if (showEx) {
+    h += '<tr class="sub-head">';
+    for (const t of vis) {
+      h += th(t, 'תרגול', 'grp-start');
+      for (const e of exCols[t]) {
+        const req = exReqInView(t, e);
+        h += th(exColKey(t, e), e, 'ex-col' + (req ? '' : ' ex-off'), req ? '' : ' title="לא נדרש"');
+      }
+    }
+    h += '</tr>';
+  }
+  h += '</thead><tbody>';
+
+  // ממוצע כיתה — על כל תלמידי הכיתות המוצגות
+  const colSum = {}, colN = {};
+  const addAvg = (k, v) => { colSum[k] = (colSum[k] || 0) + v; colN[k] = (colN[k] || 0) + 1; };
+  for (const s of all) {
+    const m = cache.get(s);
+    if (m.__overall) addAvg('__o', m.__overall.val);
+    for (const t of vis) {
+      const v = m[t];
+      if (!v) continue;
+      addAvg(t, v.val);
+      if (showEx) for (const e of exCols[t]) {
+        const x = v.exv[e];
+        if (x && x.req) addAvg(exColKey(t, e), x.val);
+      }
+    }
+  }
+
+  const nCols = 2 + (showCls ? 1 : 0) + vis.reduce((n, t) => n + 1 + (showEx ? exCols[t].length : 0), 0);
+  if (!studs.length) h += `<tr><td colspan="${nCols}" class="empty-msg">אין תלמידים שמתאימים לסינון "${esc(S.q)}"</td></tr>`;
+  for (const s of studs) {
+    const m = cache.get(s);
+    const c = hl.get(s.id);
+    const dot = c ? `<span class="dot" style="background:${c}"></span>` : '';
+    h += `<tr><td class="name-col"><span class="stu" data-sid="${s.id}" title="הדגש בגרף">${dot}${esc(s.name)}</span></td>`;
+    if (showCls) h += `<td>${esc(s.cls)}</td>`;
+    h += `<td class="overall-col">${cellHTML(m.__overall)}</td>`;
+    for (const t of vis) {
+      const v = m[t];
+      const g = showEx ? ' grp-start' : '';
+      h += v ? `<td class="${g}">${cellHTML(v, v.det.join('\n'))}</td>` : `<td class="na${g}">-</td>`;
+      if (showEx) for (const e of exCols[t]) h += exCellHTML(v ? v.exv[e] : null);
+    }
+    h += '</tr>';
+  }
+  // שורת ממוצע כיתה
+  const avgCell = k => {
+    if (!colN[k]) return '-';
+    const a = colSum[k] / colN[k];
+    return `<span class="badge ${badgeClass(a)}">${S.measure === 'submit' ? r1(a) + '%' : r1(a)}</span>`;
+  };
+  h += `<tr class="avg-row"><td class="name-col">ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}</td>`;
+  if (showCls) h += '<td></td>';
+  h += `<td class="overall-col">${avgCell('__o')}</td>`;
+  for (const t of vis) {
+    h += `<td class="${showEx ? 'grp-start' : ''}">${avgCell(t)}</td>`;
+    if (showEx) for (const e of exCols[t]) h += `<td class="ex-col">${avgCell(exColKey(t, e))}</td>`;
+  }
+  h += '</tr></tbody></table>';
+  wrap.innerHTML = h;
+
+  // סיכום
+  const appl = D.targolim.filter(t => applicable(t) && inRange(t));
+  const blocked = appl.filter(t => !eligibleView(t)).length;
+  let exOut = 0, susTot = 0;
+  for (const c of shownClasses()) for (const t of vis) if (R[c][t] && R[c][t].elig)
+    exOut += R[c][t].eligEx.filter(x => !x).length;
+  for (const s of studs) { const o = cache.get(s).__overall; if (o) susTot += o.sus; }
+  const parts = [
+    studs.length === all.length ? `${studs.length} תלמידים` : `${studs.length} מתוך ${all.length} תלמידים`,
+    `${vis.length} תרגולים`,
+    `מדד: ${S.measure === 'submit' ? 'הגשה' : 'ציון'}`,
+  ];
+  if (blocked) parts.push(`${blocked} תרגולים מתחת לסף`);
+  if (exOut)   parts.push(`${exOut} תרגילים לא נדרשים בתרגולים המוצגים`);
+  if (S.selfMin > 0) parts.push(`${susTot} תרגילים חשודים (עבודה עצמית < ${S.selfMin})`);
+  if (S.late > 0) parts.push(`הורדה על איחור ${S.late}%`);
+  document.getElementById('summary').textContent = parts.join(' | ');
+}
+
+function renderChips() {
+  const grid = document.getElementById('filterGrid');
+  let h = '';
+  D.targolim.forEach((t, i) => {
+    if (!applicable(t)) return;
+    const ir = inRange(t), el = eligibleView(t), forced = tOverride[t] === 'in';
+    const cls = ['filter-chip'];
+    if (!ir) cls.push('out-range');
+    else if (!el) cls.push('blocked');
+    else if (selected.has(t)) cls.push('active');
+    if (forced && ir) cls.push('forced');
+    if (S.openT === t) cls.push('open');
+    let nEx = 0, nIn = 0;
+    for (const c of shownClasses()) if (R[c][t]) { nEx += R[c][t].eligEx.length; nIn += R[c][t].eligEx.filter(Boolean).length; }
+    h += `<div class="${cls.join(' ')}" data-ti="${i}">${esc(t)}`
+       + ` <span class="chip-rate">${r1(viewRate(t))}%</span>`
+       + ` <span class="chip-ex" data-ex="${i}" title="בחירת תרגילים נדרשים">תרגילים ${nIn}/${nEx} ▾</span></div>`;
+  });
+  grid.innerHTML = h;
+}
+
+function renderPanel() {
+  const el = document.getElementById('exPanel');
+  const t = S.openT;
+  if (t == null || !applicable(t)) { el.innerHTML = ''; return; }
+  const ti = D.targolim.indexOf(t);
+  let h = `<div class="ex-panel"><h3>תרגילים ב"${esc(t)}"</h3>`;
+  for (const c of shownClasses()) {
+    const r = R[c][t];
+    if (!r) continue;
+    if (shownClasses().length > 1) h += `<div class="cls-title">כיתה ${esc(c)}</div>`;
+    h += '<div class="ex-list">';
+    D.ex[c][t].forEach((e, i) => {
+      const o = exOverride[key(t, e)];
+      const on = r.eligEx[i];
+      const mode = o === 'in' ? 'נכלל ידנית' : o === 'out' ? 'הוצא ידנית' : 'אוטומטי';
+      h += `<div class="ex-item ${on ? 'on' : 'off'}" data-ti="${ti}" data-c="${esc(c)}" data-ei="${i}">`
+         + `${on ? '☑' : '☐'} ${esc(e)} <span class="chip-rate">${r1(r.exRate[i])}%</span>`
+         + ` <span class="mode">${mode}</span></div>`;
+    });
+    h += '</div>';
+  }
+  h += '<div class="hint">לחיצה מחליפה: אוטומטי (לפי הסף) → נכלל ידנית → הוצא ידנית → אוטומטי. האחוז הוא שיעור ההגשה של הכיתה.</div></div>';
+  el.innerHTML = h;
+}
+
+// ─── אירועים ───
+function bindRange(id, prop, fmt) {
+  const inp = document.getElementById(id), out = document.getElementById(id + 'Val');
+  inp.addEventListener('input', () => { S[prop] = +inp.value; out.textContent = fmt(S[prop]); render(); });
+}
+bindRange('threshold',   'threshold', v => v + '%');
+bindRange('selfMin',     'selfMin',   v => v ? '< ' + v : 'כבוי');
+bindRange('latePenalty', 'late',      v => v + '%');
+
+document.getElementById('selfAction').addEventListener('change', e => { S.selfAction = e.target.value; render(); });
+document.querySelectorAll('input[name=measure]').forEach(r => r.addEventListener('change', e => { S.measure = e.target.value; render(); }));
+document.querySelectorAll('input[name=show]').forEach(r => r.addEventListener('change', e => {
+  S.show = e.target.value;
+  if (S.show === 'targol' && S.sortCol.startsWith('x\u0002')) S.sortCol = 'name';
+  renderTable();
+}));
+
+const classSel = document.getElementById('classSelect');
+if (MULTI) {
+  classSel.add(new Option('כל הכיתות', 'all'));
+  D.classes.forEach(c => classSel.add(new Option(c, c)));
+  classSel.addEventListener('change', () => { S.cls = classSel.value; render(); });
+} else {
+  S.cls = D.classes[0];
+  document.getElementById('classGroup').style.display = 'none';
+  document.getElementById('classSep').style.display = 'none';
+}
+
+const selFrom = document.getElementById('rangeFrom'), selTo = document.getElementById('rangeTo');
+D.targolim.forEach((t, i) => {
+  const lbl = `${i + 1}. ${t.length > 28 ? t.slice(0, 26) + '…' : t}`;
+  selFrom.add(new Option(lbl, i)); selTo.add(new Option(lbl, i));
+});
+selTo.value = D.targolim.length - 1;
+const onRange = () => {
+  const f = +selFrom.value, t = +selTo.value;
+  S.from = Math.min(f, t); S.to = Math.max(f, t); render();
+};
+selFrom.addEventListener('change', onRange); selTo.addEventListener('change', onRange);
+
+document.getElementById('filterGrid').addEventListener('click', e => {
+  const exBtn = e.target.closest('.chip-ex');
+  if (exBtn) {
+    const t = D.targolim[+exBtn.dataset.ex];
+    S.openT = S.openT === t ? null : t;
+    render(); return;
+  }
+  const chip = e.target.closest('.filter-chip');
+  if (!chip) return;
+  const t = D.targolim[+chip.dataset.ti];
+  if (!inRange(t)) return;
+  if (!eligibleView(t)) { tOverride[t] = 'in'; selected.add(t); }          // הכללה ידנית
+  else if (tOverride[t] === 'in' && selected.has(t)) { delete tOverride[t]; selected.delete(t); }
+  else if (selected.has(t)) selected.delete(t);
+  else selected.add(t);
+  render();
+});
+
+document.getElementById('exPanel').addEventListener('click', e => {
+  const it = e.target.closest('.ex-item');
+  if (!it) return;
+  const t = D.targolim[+it.dataset.ti];
+  const ex = D.ex[it.dataset.c][t][+it.dataset.ei];
+  const k = key(t, ex), o = exOverride[k];
+  if (!o) exOverride[k] = 'in';
+  else if (o === 'in') exOverride[k] = 'out';
+  else delete exOverride[k];
+  render();
+});
+
+document.getElementById('nameFilter').addEventListener('input', e => {
+  S.q = e.target.value; renderTable(); renderChart();
+});
+
+document.getElementById('chartLegend').addEventListener('click', e => {
+  const x = e.target.closest('.x');
+  if (!x) return;
+  if (x.id === 'clearPicks') picked.clear();
+  else picked.delete(+x.dataset.sid);
+  renderTable(); renderChart();
+});
+
+let resizeT;
+window.__reportResize = () => { clearTimeout(resizeT); resizeT = setTimeout(renderChart, 150); };
+
+document.getElementById('tableWrap').addEventListener('click', e => {
+  const stu = e.target.closest('.stu');
+  if (stu) {
+    if (!togglePick(+stu.dataset.sid)) alert(`אפשר להדגיש עד ${MAX_HL} תלמידים בו-זמנית`);
+    renderTable(); renderChart(); return;
+  }
+  const th = e.target.closest('th');
+  if (!th) return;
+  const col = th.dataset.col;
+  if (S.sortCol === col) S.sortDir *= -1;
+  else { S.sortCol = col; S.sortDir = (col === 'name' || col === 'cls') ? 1 : -1; }
+  renderTable();
+});
+
+const visibleChips = () => D.targolim.filter(t => applicable(t) && inRange(t) && eligibleView(t));
+document.getElementById('btnAll').addEventListener('click', () => { visibleChips().forEach(t => selected.add(t)); render(); });
+document.getElementById('btnNone').addEventListener('click', () => { visibleChips().forEach(t => selected.delete(t)); render(); });
+document.getElementById('btnReset').addEventListener('click', () => {
+  for (const k in exOverride) delete exOverride[k];
+  for (const k in tOverride) delete tOverride[k];
+  D.targolim.forEach(t => selected.add(t));
+  render();
+});
+
+render();
+}  // startReport
+
+
+// ─── קריאת CSV בדפדפן — אותם כללים כמו בסקריפט הפייתון ───
+const COL = { cls: 'כתה', name: 'שם תלמיד', user: 'שם משתמש', targol: 'תרגול', topic: 'תרגיל',
+              ex: 'תרגיל2', open: 'תאריך פתיחה', status: 'סטטוס', grade: 'ציון', self: 'ציון עבודה עצמית' };
+const REQUIRED = [COL.name, COL.targol, COL.topic, COL.status];
+
+function parseCSV(text) {
+  const firstLine = text.split(/\r?\n/, 1)[0];
+  const count = d => firstLine.split(d).length - 1;
+  const delim = [',', ';', '\t'].sort((a, b) => count(b) - count(a))[0];   // Excel לפעמים שומר עם ;
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === delim) { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(f); rows.push(row); row = []; f = '';
+    } else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+
+function parseDate(s) {
+  let m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  return null;
+}
+const fmtDate = d => d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` : '';
+const toNum = s => (s === '' || !isFinite(+s)) ? null : +s;
+
+function statusCode(status, grade) {
+  if (status === '' || status === 'לא הוגש') return 0;
+  if (grade === '0') return 0;                     // ציון 0 נחשב כאי-הגשה
+  return status === 'באיחור' ? 2 : 1;
+}
+
+function buildData(text) {
+  const rows = parseCSV(text.replace(/^﻿/, ''));
+  if (!rows.length) throw new Error('הקובץ ריק.');
+  const head = rows[0].map(h => h.trim().replace(/^﻿/, ''));
+  const idx = {};
+  head.forEach((h, i) => { if (h && !(h in idx)) idx[h] = i; });
+  const missing = REQUIRED.filter(c => !(c in idx));
+  if (missing.length)
+    throw new Error(`חסרות עמודות בקובץ: ${missing.join(', ')}\nהעמודות שנמצאו: ${head.filter(Boolean).join(', ')}`);
+  const hasEx = COL.ex in idx;
+  const get = (r, c) => (c in idx && r[idx[c]] != null) ? String(r[idx[c]]).trim() : '';
+
+  const exercises = new Map(), tOrder = new Map(), students = new Map(), cells = new Map();
+  rows.slice(1).forEach((r, i) => {
+    if (!r.some(c => c.trim())) return;
+    const name = get(r, COL.name), num = get(r, COL.targol), topic = get(r, COL.topic);
+    let t, ex;
+    if (hasEx) { t = num && topic ? `${num}: ${topic}` : (num || topic); ex = get(r, COL.ex); }
+    else { t = num; ex = topic; }
+    if (!name || !t || !ex) return;
+    const cls = get(r, COL.cls), user = get(r, COL.user) || name;
+
+    const k = cls + '\u0001' + t;
+    if (!exercises.has(k)) exercises.set(k, []);
+    if (!exercises.get(k).includes(ex)) exercises.get(k).push(ex);
+
+    const d = parseDate(get(r, COL.open));
+    if (!tOrder.has(t)) tOrder.set(t, { d, i });
+    else { const o = tOrder.get(t); if (d && (!o.d || d < o.d)) o.d = d; }
+
+    if (!students.has(user)) students.set(user, { name, cls });
+
+    const g = get(r, COL.grade);
+    const cell = [statusCode(get(r, COL.status), g), toNum(g), toNum(get(r, COL.self))];
+    const ck = user + '\u0001' + t + '\u0001' + ex;
+    if (!cells.has(ck) || (cells.get(ck)[0] === 0 && cell[0] !== 0)) cells.set(ck, cell);
+  });
+  if (!students.size) throw new Error('לא נמצאו שורות נתונים תקינות בקובץ.');
+
+  const targolim = [...tOrder.keys()].sort((a, b) => {
+    const A = tOrder.get(a), B = tOrder.get(b);
+    const da = A.d ? A.d.getTime() : Infinity, db = B.d ? B.d.getTime() : Infinity;
+    return da - db || A.i - B.i;
+  });
+  const classes = [...new Set([...students.values()].map(s => s.cls))];
+  const ex = {};
+  for (const c of classes) {
+    ex[c] = {};
+    for (const t of targolim) { const e = exercises.get(c + '\u0001' + t); if (e) ex[c][t] = e; }
+  }
+  const dates = {};
+  for (const t of targolim) dates[t] = fmtDate(tOrder.get(t).d);
+  const outStudents = [...students].map(([user, s]) => {
+    const d = {};
+    for (const [t, exs] of Object.entries(ex[s.cls]))
+      d[t] = exs.map(e => cells.get(user + '\u0001' + t + '\u0001' + e) || [0, null, null]);
+    return { name: s.name, cls: s.cls, d };
+  });
+  return { classes, targolim, dates, ex, students: outStudents };
+}
+
+// קידוד: UTF-8, ואם לא — Windows-1255 (ייצוא CSV רגיל של Excel בעברית)
+function decode(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { return new TextDecoder('windows-1255').decode(buf); }
+}
+
+const REPORT_BODY = document.getElementById('report').innerHTML;
+
+async function loadFile(file) {
+  const err = document.getElementById('dropErr');
+  err.style.display = 'none';
+  try {
+    const data = buildData(decode(await file.arrayBuffer()));
+    const report = document.getElementById('report');
+    report.innerHTML = REPORT_BODY;            // דוח נקי — בלי בחירות מהקובץ הקודם
+    const base = file.name.replace(/\.[^.]+$/, '');
+    document.getElementById('reportTitle').textContent = `דוח הגשות — ${base}`;
+    document.title = `דוח הגשות — ${base}`;
+    document.getElementById('fileName').textContent =
+      `${file.name} (${data.students.length} תלמידים, ${data.targolim.length} תרגולים)`;
+    document.getElementById('drop').hidden = true;
+    document.getElementById('topbar').hidden = false;
+    report.hidden = false;
+    startReport(data);
+  } catch (e) {
+    const drop = document.getElementById('drop');
+    if (drop.hidden) { alert(`לא ניתן לקרוא את "${file.name}":\n${e.message}`); return; }
+    err.textContent = `לא ניתן לקרוא את "${file.name}":\n${e.message}`;
+    err.style.display = 'block';
+  }
+}
+
+for (const id of ['fileInput', 'fileInput2'])
+  document.getElementById(id).addEventListener('change', e => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+// גרירה לכל מקום בדף
+let dragDepth = 0;
+const isFileDrag = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+window.addEventListener('dragenter', e => { if (!isFileDrag(e)) return; e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragover',  e => { if (isFileDrag(e)) e.preventDefault(); });
+window.addEventListener('dragleave', e => { if (!isFileDrag(e)) return; if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('drop', e => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+</script>
+</body>
+</html>
