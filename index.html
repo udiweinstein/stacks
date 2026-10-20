@@ -150,6 +150,7 @@
 
   /* דוח פשוט */
   body.mode-simple .grades-only { display: none; }
+  body:not(.mode-simple) .simple-only { display: none; }
   td.cnt { font-variant-numeric: tabular-nums; font-size: 0.95rem; }
   td.cnt.late-n  { color: #8e44ad; }
   td.cnt.none-n  { color: #c0392b; font-weight: bold; }
@@ -218,8 +219,8 @@
   <div class="controls-row">
     <div class="control-group">
       <label class="ttl">סוג דוח:</label>
-      <label class="opt"><input type="radio" name="mode" value="grades" checked> דוח ציונים</label>
-      <label class="opt"><input type="radio" name="mode" value="simple"> דוח פשוט</label>
+      <label class="opt"><input type="radio" name="mode" value="simple" checked> דוח פשוט</label>
+      <label class="opt"><input type="radio" name="mode" value="grades"> דוח ציונים</label>
     </div>
     <div class="control-sep"></div>
     <div class="control-group" id="classGroup">
@@ -250,6 +251,12 @@
       <label class="ttl">הגשה מינימלית של הכיתה:</label>
       <input type="range" id="threshold" min="0" max="100" value="0" step="5">
       <span class="val" id="thresholdVal">0%</span>
+    </div>
+    <div class="control-sep simple-only"></div>
+    <div class="control-group simple-only" title="כמה מהתרגילים הנדרשים בתרגול התלמיד צריך להגיש כדי שהתרגול ייחשב כמוגש">
+      <label class="ttl">השלמה מינימלית לתרגול:</label>
+      <input type="range" id="minDone" min="0" max="100" value="0" step="10">
+      <span class="val" id="minDoneVal">תרגיל אחד</span>
     </div>
     <div class="control-sep"></div>
     <div class="control-group" title="תרגיל עם ציון עבודה עצמית נמוך מזה נחשב חשוד">
@@ -316,13 +323,13 @@ window.addEventListener('resize', () => window.__reportResize && window.__report
 
 // ─── הדוח: מופעל עם הנתונים (מוטמעים בדף, או מקובץ שנגרר בגרסת ההעלאה) ───
 function startReport(D) {
-document.body.classList.remove('mode-simple');
+document.body.classList.add('mode-simple');   // ברירת מחדל: דוח פשוט
 const MULTI = D.classes.length > 1;
 const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
 const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
 
 const S = {
-  mode: 'grades', cls: 'all', measure: 'submit', show: 'targol', q: '',
+  mode: 'simple', minDone: 0, cls: 'all', measure: 'submit', show: 'targol', q: '',
   threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
   from: 0, to: D.targolim.length - 1,
   sortCol: 'name', sortDir: 1, openT: null,
@@ -534,7 +541,8 @@ function highlightMap() {
 let chartCtx = null;
 
 // ─── דוח פשוט: סטטוס לכל תרגול ───
-// תרגול נחשב כמוגש אם הוגש לפחות תרגיל נדרש אחד (תרגיל "חשוד" שהוגדר כ-0 לא נחשב הגשה).
+// תרגול נחשב כמוגש אם התלמיד הגיש לפחות S.minDone% מהתרגילים הנדרשים בו
+// (0 = לפחות תרגיל אחד). תרגיל "חשוד" שהוגדר כ-0 לא נחשב הגשה.
 // באיחור — אם אחד התרגילים שהוגשו הוגש באיחור. ההורדה על איחור חלה פעם אחת על התרגול.
 const PS_NONE = 0, PS_ONTIME = 1, PS_LATE = 2;
 function practiceStatus(s, t) {
@@ -542,7 +550,8 @@ function practiceStatus(s, t) {
   if (!v) return null;
   const req = Object.values(v.exv).filter(x => x.req);
   const ok = req.filter(x => x.ok);
-  const st = !ok.length ? PS_NONE : ok.some(x => x.late) ? PS_LATE : PS_ONTIME;
+  const enough = ok.length > 0 && ok.length / req.length * 100 >= S.minDone - 1e-9;
+  const st = !enough ? PS_NONE : ok.some(x => x.late) ? PS_LATE : PS_ONTIME;
   return { st, done: ok.length, cnt: req.length, sus: v.sus, det: v.det };
 }
 function simpleVal(ps) {
@@ -559,7 +568,9 @@ function simpleRow(s, vis) {
     const part = ps.st !== PS_NONE && ps.done < ps.cnt;
     if (part) r.partial++;
     r.sus += ps.sus;
-    r.lists[ps.st].push(t + (part ? ` (${ps.done}/${ps.cnt} תרגילים)` : ''));
+    // ב"לא הוגשו" — מציין אם הוגש חלק שלא הגיע למינימום
+    const note = ps.done < ps.cnt && ps.done > 0 ? ` (${ps.done}/${ps.cnt} תרגילים)` : '';
+    r.lists[ps.st].push(t + note);
   }
   r.score = r.total ? (r.on + r.late * (1 - S.late / 100)) / r.total * 100 : null;
   return r;
@@ -724,7 +735,9 @@ function summaryText(vis, shown, total, susTot) {
   const parts = [
     shown === total ? `${shown} תלמידים` : `${shown} מתוך ${total} תלמידים`,
     `${vis.length} תרגולים`,
-    S.mode === 'simple' ? 'דוח פשוט' : `מדד: ${S.measure === 'submit' ? 'הגשה' : 'ציון'}`,
+    S.mode === 'simple'
+      ? `דוח פשוט — תרגול מוגש אם הוגשו ${S.minDone ? `לפחות ${S.minDone}% מהתרגילים` : 'לפחות תרגיל אחד'}`
+      : `מדד: ${S.measure === 'submit' ? 'הגשה' : 'ציון'}`,
   ];
   if (blocked) parts.push(`${blocked} תרגולים מתחת לסף`);
   if (exOut)   parts.push(`${exOut} תרגילים לא נדרשים בתרגולים המוצגים`);
@@ -773,7 +786,7 @@ function renderSimpleTable(vis) {
     const r = rows.get(s);
     const c = hl.get(s.id);
     const dot = c ? `<span class="dot" style="background:${c}"></span>` : '';
-    const part = r.partial ? `<span class="partial" title="${r.partial} תרגולים הוגשו חלקית — נספרים כמוגשים">◐${r.partial}</span>` : '';
+    const part = r.partial ? `<span class="partial" title="${r.partial} תרגולים הוגשו חלקית (מעל המינימום) — נספרים כמוגשים">◐${r.partial}</span>` : '';
     const sus = r.sus ? `<span class="flag sus" title="${r.sus} תרגילים חשודים">⚠${r.sus > 1 ? r.sus : ''}</span>` : '';
     h += `<tr><td class="name-col"><span class="stu" data-sid="${s.id}" title="הדגש בגרף">${dot}${esc(s.name)}</span></td>`;
     if (showCls) h += `<td>${esc(s.cls)}</td>`;
@@ -993,6 +1006,7 @@ function bindRange(id, prop, fmt) {
 bindRange('threshold',   'threshold', v => v + '%');
 bindRange('selfMin',     'selfMin',   v => v ? '< ' + v : 'כבוי');
 bindRange('latePenalty', 'late',      v => v + '%');
+bindRange('minDone',     'minDone',   v => v ? v + '%' : 'תרגיל אחד');
 
 document.getElementById('selfAction').addEventListener('change', e => { S.selfAction = e.target.value; render(); });
 document.querySelectorAll('input[name=measure]').forEach(r => r.addEventListener('change', e => { S.measure = e.target.value; render(); }));
