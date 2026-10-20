@@ -219,8 +219,9 @@
   <div class="controls-row">
     <div class="control-group">
       <label class="ttl">סוג דוח:</label>
-      <label class="opt"><input type="radio" name="mode" value="simple" checked> דוח פשוט</label>
-      <label class="opt"><input type="radio" name="mode" value="grades"> דוח ציונים</label>
+      <label class="opt" title="לכל תלמיד: ציון, ומספר התרגולים שהוגשו בזמן / באיחור / לא הוגשו"><input type="radio" name="report" value="simple" checked> סיכום הגשות</label>
+      <label class="opt" title="אחוז ההגשה של כל תלמיד בכל תרגול"><input type="radio" name="report" value="submit"> הגשות לפי תרגול</label>
+      <label class="opt" title="הציון של כל תלמיד בכל תרגול"><input type="radio" name="report" value="grade"> ציונים לפי תרגול</label>
     </div>
     <div class="control-sep"></div>
     <div class="control-group" id="classGroup">
@@ -231,12 +232,6 @@
     <div class="control-group">
       <label class="ttl">תלמיד:</label>
       <input type="search" id="nameFilter" placeholder="סינון לפי שם…" autocomplete="off">
-    </div>
-    <div class="control-sep grades-only"></div>
-    <div class="control-group grades-only">
-      <label class="ttl">מדד:</label>
-      <label class="opt"><input type="radio" name="measure" value="submit" checked> הגשה</label>
-      <label class="opt"><input type="radio" name="measure" value="grade"> ציון</label>
     </div>
     <div class="control-sep grades-only"></div>
     <div class="control-group grades-only">
@@ -255,8 +250,8 @@
     <div class="control-sep simple-only"></div>
     <div class="control-group simple-only" title="כמה מהתרגילים הנדרשים בתרגול התלמיד צריך להגיש כדי שהתרגול ייחשב כמוגש">
       <label class="ttl">השלמה מינימלית לתרגול:</label>
-      <input type="range" id="minDone" min="0" max="100" value="0" step="10">
-      <span class="val" id="minDoneVal">תרגיל אחד</span>
+      <input type="range" id="minDone" min="0" max="100" value="100" step="10">
+      <span class="val" id="minDoneVal">100%</span>
     </div>
     <div class="control-sep"></div>
     <div class="control-group" title="תרגיל עם ציון עבודה עצמית נמוך מזה נחשב חשוד">
@@ -329,7 +324,7 @@ const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
 const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
 
 const S = {
-  mode: 'simple', minDone: 0, cls: 'all', measure: 'submit', show: 'targol', q: '',
+  mode: 'simple', minDone: 100, cls: 'all', measure: 'submit', show: 'targol', q: '',
   threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
   from: 0, to: D.targolim.length - 1,
   sortCol: 'name', sortDir: 1, openT: null,
@@ -736,8 +731,8 @@ function summaryText(vis, shown, total, susTot) {
     shown === total ? `${shown} תלמידים` : `${shown} מתוך ${total} תלמידים`,
     `${vis.length} תרגולים`,
     S.mode === 'simple'
-      ? `דוח פשוט — תרגול מוגש אם הוגשו ${S.minDone ? `לפחות ${S.minDone}% מהתרגילים` : 'לפחות תרגיל אחד'}`
-      : `מדד: ${S.measure === 'submit' ? 'הגשה' : 'ציון'}`,
+      ? `סיכום הגשות — תרגול מוגש אם הוגשו ${S.minDone >= 100 ? 'כל התרגילים הנדרשים' : S.minDone ? `לפחות ${S.minDone}% מהתרגילים הנדרשים` : 'לפחות תרגיל אחד'}`
+      : (S.measure === 'submit' ? 'הגשות לפי תרגול' : 'ציונים לפי תרגול'),
   ];
   if (blocked) parts.push(`${blocked} תרגולים מתחת לסף`);
   if (exOut)   parts.push(`${exOut} תרגילים לא נדרשים בתרגולים המוצגים`);
@@ -943,7 +938,7 @@ function renderTable() {
   const parts = [
     studs.length === all.length ? `${studs.length} תלמידים` : `${studs.length} מתוך ${all.length} תלמידים`,
     `${vis.length} תרגולים`,
-    `מדד: ${S.measure === 'submit' ? 'הגשה' : 'ציון'}`,
+    S.measure === 'submit' ? 'הגשות לפי תרגול' : 'ציונים לפי תרגול',
   ];
   if (blocked) parts.push(`${blocked} תרגולים מתחת לסף`);
   if (exOut)   parts.push(`${exOut} תרגילים לא נדרשים בתרגולים המוצגים`);
@@ -1009,9 +1004,11 @@ bindRange('latePenalty', 'late',      v => v + '%');
 bindRange('minDone',     'minDone',   v => v ? v + '%' : 'תרגיל אחד');
 
 document.getElementById('selfAction').addEventListener('change', e => { S.selfAction = e.target.value; render(); });
-document.querySelectorAll('input[name=measure]').forEach(r => r.addEventListener('change', e => { S.measure = e.target.value; render(); }));
-document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', e => {
-  S.mode = e.target.value;
+// בחירת הדוח: סיכום הגשות (פשוט) / הגשות לפי תרגול / ציונים לפי תרגול
+document.querySelectorAll('input[name=report]').forEach(r => r.addEventListener('change', e => {
+  const v = e.target.value;
+  S.mode = v === 'simple' ? 'simple' : 'grades';
+  if (v !== 'simple') S.measure = v;
   document.body.classList.toggle('mode-simple', S.mode === 'simple');
   const ok = S.mode === 'simple'
     ? ['name', 'cls', 'overall', 'total', 'on', 'late', 'none']
