@@ -148,6 +148,22 @@
   .chart-tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
   .chart-tip .row b { font-variant-numeric: tabular-nums; }
 
+  /* נתונים גולמיים */
+  #rawCard[hidden] { display: none; }
+  #rawCard .hint { margin-bottom: 10px; }
+  .raw-wrap { box-shadow: none; border: 1px solid #e2e8ef; }
+  .raw-wrap table { min-width: 0; }
+  .raw-wrap thead th { cursor: default; font-size: 0.8rem; padding: 8px 10px; }
+  .raw-wrap td { font-size: 0.82rem; padding: 6px 10px; white-space: nowrap; }
+  .raw-wrap tr.grp td { border-top: 2px solid #c9d3de; }
+  .raw-wrap tr.dim td { color: #aaa; }
+  .raw-wrap td.use { font-weight: 600; }
+  .use.ok   { color: #155724; }
+  .use.late { color: #8e44ad; }
+  .use.no   { color: #c0392b; }
+  .use.sus  { color: #c0392b; }
+  .use.off  { color: #999; font-weight: normal; }
+
   /* דוח פשוט */
   body.mode-simple .grades-only { display: none; }
   body:not(.mode-simple) .simple-only { display: none; }
@@ -309,6 +325,12 @@
     <div id="chart"></div>
     <div class="chart-tip" id="chartTip"></div>
   </div>
+</div>
+
+<div class="chart-card" id="rawCard" hidden>
+  <h2 id="rawTitle"></h2>
+  <div class="hint" id="rawHint"></div>
+  <div class="table-wrap raw-wrap" id="rawWrap"></div>
 </div>
 </div><!-- /#report -->
 
@@ -577,7 +599,65 @@ function pointVal(s, t) {
   const v = cellVal(s, t); return v ? v.val : null;
 }
 
+// ─── נתונים גולמיים: מוצגים כשנבחר תלמיד יחיד ───
+// תלמיד יחיד = סינון השם השאיר תלמיד אחד, או שהודגש (נבחר בלחיצה) בדיוק תלמיד אחד.
+function singleStudent() {
+  const fs = filteredStudents();
+  if (fs.length === 1) return fs[0];
+  const p = fs.filter(s => picked.has(s.id));
+  return p.length === 1 ? p[0] : null;
+}
+
+// איך הדוח התייחס לשורה — כדי שאפשר יהיה להבין כל מספר בטבלה
+function rowUsage(s, t, e, visSet) {
+  const r = (R[s.cls] || {})[t];
+  if (!r) return ['off', 'לא שייך לכיתה'];
+  if (!inRange(t)) return ['off', 'תרגול מחוץ לטווח'];
+  if (!r.elig) return ['off', 'תרגול מתחת לסף'];
+  if (!visSet.has(t)) return ['off', 'תרגול לא נבחר'];
+  const i = D.ex[s.cls][t].indexOf(e);
+  if (!r.eligEx[i]) return ['off', 'תרגיל לא נדרש'];
+  const v = cellVal(s, t), x = v && v.exv[e];
+  if (!x) return ['off', '-'];
+  if (x.sus) return ['sus', S.selfAction === 'zero' ? '⚠ חשוד — נספר כ-0' : '⚠ חשוד'];
+  if (!x.ok) return ['no', 'לא הוגש'];
+  if (x.late) return ['late', S.late ? `באיחור (−${S.late}%)` : 'באיחור'];
+  return ['ok', 'נספר'];
+}
+
+function renderRaw() {
+  const card = document.getElementById('rawCard');
+  const s = singleStudent();
+  if (!s || !D.rawHead) { card.hidden = true; return; }
+  card.hidden = false;
+  document.getElementById('rawTitle').textContent =
+    `נתונים גולמיים — ${s.name}${MULTI ? ` (${s.cls})` : ''}`;
+  document.getElementById('rawHint').textContent =
+    `${s.raw.length} שורות מהקובץ, לפי סדר התרגולים. העמודה "בדוח" מראה איך הדוח התייחס לכל שורה לפי הסינונים הנוכחיים.`;
+
+  const visSet = new Set(visibleTargolim());
+  const order = new Map(D.targolim.map((t, i) => [t, i]));
+  const rows = s.raw.map((r, i) => ({ r, i })).sort((a, b) =>
+    (order.get(a.r.t) - order.get(b.r.t)) || (a.i - b.i));
+
+  let h = '<table><thead><tr>';
+  for (const c of D.rawHead) h += `<th>${esc(c)}</th>`;
+  h += '<th>בדוח</th></tr></thead><tbody>';
+  let prev = null;
+  for (const { r } of rows) {
+    const [cls, txt] = rowUsage(s, r.t, r.e, visSet);
+    const trc = [r.t !== prev && prev !== null ? 'grp' : '', cls === 'off' ? 'dim' : ''].filter(Boolean).join(' ');
+    prev = r.t;
+    h += `<tr${trc ? ` class="${trc}"` : ''}>`;
+    for (const v of r.v) h += `<td>${esc(v)}</td>`;
+    h += `<td class="use ${cls}">${esc(txt)}</td></tr>`;
+  }
+  h += '</tbody></table>';
+  document.getElementById('rawWrap').innerHTML = h;
+}
+
 function renderChart() {
+  renderRaw();
   const box = document.getElementById('chart');
   const tip = document.getElementById('chartTip');
   const legend = document.getElementById('chartLegend');
@@ -611,7 +691,7 @@ function renderChart() {
   if (series.length > hlList.length)
     lg += `<span class="item"><span class="sw rest"></span>${hlList.length ? 'שאר התלמידים' : 'תלמידים'}</span>`;
   if (picked.size) lg += `<span class="item x" id="clearPicks">נקה הדגשות</span>`;
-  lg += `<span class="hint">לחיצה על קו או על שם בטבלה מדגישה תלמיד (עד ${MAX_HL})</span>`;
+  lg += `<span class="hint">לחיצה על קו או על שם בטבלה מדגישה תלמיד (עד ${MAX_HL}). תלמיד יחיד — הנתונים הגולמיים שלו מוצגים מתחת לגרף.</span>`;
   legend.innerHTML = lg;
 
   // גאומטריה
@@ -1172,6 +1252,9 @@ function buildData(text) {
   const hasEx = COL.ex in idx;
   const get = (r, c) => (c in idx && r[idx[c]] != null) ? String(r[idx[c]]).trim() : '';
 
+  const RAW_SKIP = new Set([COL.cls, COL.name, COL.user]);
+  const rawHead = [...new Set(head.filter(h => h && !RAW_SKIP.has(h)))];
+  const raw = new Map();
   const exercises = new Map(), tOrder = new Map(), students = new Map(), cells = new Map();
   rows.slice(1).forEach((r, i) => {
     if (!r.some(c => c.trim())) return;
@@ -1181,6 +1264,8 @@ function buildData(text) {
     else { t = num; ex = topic; }
     if (!name || !t || !ex) return;
     const cls = get(r, COL.cls), user = get(r, COL.user) || name;
+    if (!raw.has(user)) raw.set(user, []);
+    raw.get(user).push({ t, e: ex, v: rawHead.map(c => get(r, c)) });
 
     const k = cls + '\u0001' + t;
     if (!exercises.has(k)) exercises.set(k, []);
@@ -1216,9 +1301,9 @@ function buildData(text) {
     const d = {};
     for (const [t, exs] of Object.entries(ex[s.cls]))
       d[t] = exs.map(e => cells.get(user + '\u0001' + t + '\u0001' + e) || [0, null, null]);
-    return { name: s.name, cls: s.cls, d };
+    return { name: s.name, cls: s.cls, d, raw: raw.get(user) };
   });
-  return { classes, targolim, dates, ex, students: outStudents };
+  return { classes, targolim, dates, ex, students: outStudents, rawHead };
 }
 
 // קידוד: UTF-8, ואם לא — Windows-1255 (ייצוא CSV רגיל של Excel בעברית)
