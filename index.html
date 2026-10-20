@@ -101,6 +101,8 @@
   .badge.high { background: #d4edda; color: #155724; }
   .badge.mid  { background: #fff3cd; color: #7d6008; }
   .badge.low  { background: #f8d7da; color: #721c24; }
+  .badge.none { background: #eef1f4; color: #6b7785; font-weight: normal; }
+  .flag.nograde { color: #6b7785; }
   .sub-count { font-size: 0.75rem; color: #888; display: block; margin-top: 2px; }
   .flag { font-size: 0.72rem; margin-right: 3px; cursor: help; }
   .flag.sus  { color: #c0392b; }
@@ -314,6 +316,7 @@
 <div class="legend">
   <span class="flag sus">⚠</span> תרגיל עם ציון עבודה עצמית נמוך מהסף &nbsp;
   <span class="flag late">⏱</span> הוגש באיחור &nbsp;
+  <span class="flag nograde">○</span> הוגש בלי ציון (בדוח ציונים — לא נכלל בממוצע) &nbsp;
   · תרגיל לא נדרש (בתצוגת תרגילים) &nbsp;
   ריחוף על תא מציג פירוט לפי תרגילים. לחיצה על שם תלמיד מדגישה אותו בגרף.
 </div>
@@ -430,7 +433,9 @@ function cellVal(s, t) {
   const r = (R[s.cls] || {})[t];
   if (!r || !r.elig) return null;
   const p = S.late / 100;
-  let cs = 0, gs = 0, cnt = 0, done = 0, sus = 0, late = 0;
+  // gcnt — תרגילים שנכנסים לממוצע הציון. תרגיל שהוגש בלי ציון (המורה לא בדק)
+  // נחשב כמוגש, אבל לא נכנס לממוצע הציון — לא כ-0 ולא כציון אחר.
+  let cs = 0, gs = 0, cnt = 0, gcnt = 0, ungraded = 0, done = 0, sus = 0, late = 0;
   const det = [];
   const exv = {};   // שם תרגיל -> תוצאה לתרגיל הבודד (לתצוגת "תרגולים ותרגילים")
   D.ex[s.cls][t].forEach((e, i) => {
@@ -452,53 +457,65 @@ function cellVal(s, t) {
     const factor = ok ? (isLate ? 1 - p : 1) : 0;
     if (ok && isLate) { late++; if (p > 0) parts.push(`−${S.late}%`); }
     cnt++; if (ok) done++;
-    const gv = ok ? (g || 0) * factor : 0;
     cs += factor;
-    gs += gv;
+    const noGrade = ok && g == null;
+    let gv = null;
+    if (noGrade) { ungraded++; parts.push('ללא ציון — לא נכלל בממוצע הציון'); }
+    else { gv = ok ? g * factor : 0; gs += gv; gcnt++; }
     const line = parts.join(' | ');
     det.push(line);
-    exv[e] = { req: true, ok, sus: isSus, late: ok && isLate,
+    exv[e] = { req: true, ok, sus: isSus, late: ok && isLate, noGrade,
                val: S.measure === 'submit' ? factor * 100 : gv, line };
   });
   if (!cnt) return null;
-  const val = S.measure === 'submit' ? cs / cnt * 100 : gs / cnt;
-  return { val, cs, gs, cnt, done, sus, late, det, exv };
+  // במצב ציון: אם כל התרגילים שהוגשו בתרגול ללא ציון — אין ציון לתרגול (val = null)
+  const val = S.measure === 'submit' ? cs / cnt * 100 : (gcnt ? gs / gcnt : null);
+  return { val, cs, gs, cnt, gcnt, ungraded, done, sus, late, det, exv };
 }
 
 // סה"כ לתלמיד: ממוצע התרגולים הנדרשים — כל תרגול שווה משקל, בלי קשר למספר התרגילים בו
 function overall(s, vis) {
-  let a = 0, n = 0, done = 0, cnt = 0, sus = 0, late = 0;
+  let a = 0, n = 0, done = 0, cnt = 0, sus = 0, late = 0, ungraded = 0, any = false;
   for (const t of vis) {
     const v = cellVal(s, t);
     if (!v) continue;
+    any = true;
+    done += v.done; cnt += v.cnt; sus += v.sus; late += v.late; ungraded += v.ungraded;
+    if (v.val == null) continue;   // תרגול שאין בו אף ציון — לא נכנס לממוצע הציון
     a += v.val; n += 1;
-    done += v.done; cnt += v.cnt; sus += v.sus; late += v.late;
   }
-  return n ? { val: a / n, done, cnt, sus, late } : null;
+  if (!any) return null;
+  return { val: n ? a / n : null, done, cnt, sus, late, ungraded };
 }
 
 function badgeClass(v) { return v >= 80 ? 'high' : v >= 50 ? 'mid' : 'low'; }
 
 function cellHTML(v, title) {
   if (!v) return '-';
-  const shown = S.measure === 'submit' ? r1(v.val) + '%' : r1(v.val);
   let flags = '';
   if (v.sus)  flags += `<span class="flag sus" title="${v.sus} תרגילים חשודים">⚠${v.sus > 1 ? v.sus : ''}</span>`;
   if (v.late) flags += `<span class="flag late" title="${v.late} הוגשו באיחור">⏱${v.late > 1 ? v.late : ''}</span>`;
-  return `<span class="badge ${badgeClass(v.val)}"${title ? ` title="${esc(title)}"` : ''}>${shown}</span>${flags}`
-       + `<span class="sub-count">${v.done}/${v.cnt} הוגשו</span>`;
+  if (v.ungraded && S.measure === 'grade')
+    flags += `<span class="flag nograde" title="${v.ungraded} תרגילים הוגשו בלי ציון — לא נכללים בממוצע הציון">○${v.ungraded > 1 ? v.ungraded : ''}</span>`;
+  const sub = `<span class="sub-count">${v.done}/${v.cnt} הוגשו</span>`;
+  const tt = title ? ` title="${esc(title)}"` : '';
+  if (v.val == null) return `<span class="badge none"${tt}>ללא ציון</span>${flags}${sub}`;
+  const shown = S.measure === 'submit' ? r1(v.val) + '%' : r1(v.val);
+  return `<span class="badge ${badgeClass(v.val)}"${tt}>${shown}</span>${flags}${sub}`;
 }
 
 // תא של תרגיל בודד
 function exCellHTML(x) {
   if (!x) return '<td class="na ex-col">-</td>';
   if (!x.req) return `<td class="na ex-col" title="${esc(x.line)}">·</td>`;
-  let txt;
-  if (S.measure === 'submit') txt = !x.ok ? '✗' : x.val >= 100 ? '✓' : r1(x.val) + '%';
-  else txt = r1(x.val);
   let flags = '';
   if (x.sus)  flags += '<span class="flag sus">⚠</span>';
   if (x.late) flags += '<span class="flag late">⏱</span>';
+  if (S.measure === 'grade' && x.val == null)   // הוגש בלי ציון
+    return `<td class="ex-col"><span class="badge sm none" title="${esc(x.line)}">✓ ללא ציון</span>${flags}</td>`;
+  let txt;
+  if (S.measure === 'submit') txt = !x.ok ? '✗' : x.val >= 100 ? '✓' : r1(x.val) + '%';
+  else txt = r1(x.val);
   return `<td class="ex-col"><span class="badge sm ${x.ok ? badgeClass(x.val) : 'low'}" title="${esc(x.line)}">${txt}</span>${flags}</td>`;
 }
 
@@ -621,8 +638,9 @@ function rowUsage(s, t, e, visSet) {
   if (!x) return ['off', '-'];
   if (x.sus) return ['sus', S.selfAction === 'zero' ? '⚠ חשוד — נספר כ-0' : '⚠ חשוד'];
   if (!x.ok) return ['no', 'לא הוגש'];
-  if (x.late) return ['late', S.late ? `באיחור (−${S.late}%)` : 'באיחור'];
-  return ['ok', 'נספר'];
+  const ng = x.noGrade ? ' — ללא ציון, לא בממוצע הציון' : '';
+  if (x.late) return ['late', (S.late ? `באיחור (−${S.late}%)` : 'באיחור') + ng];
+  return ['ok', x.noGrade ? 'הוגש ללא ציון — לא בממוצע הציון' : 'נספר'];
 }
 
 function renderRaw() {
@@ -918,9 +936,9 @@ function renderTable() {
     if (col.startsWith('x\u0002')) {
       const [, t, e] = col.split('\u0002');
       const x = m[t] && m[t].exv[e];
-      return x && x.req ? x.val : -1;
+      return x && x.req ? (x.val ?? -0.5) : -1;
     }
-    const v = m[col]; return v ? v.val : -1;
+    const v = m[col]; return v ? (v.val ?? -0.5) : -1;   // "ללא ציון" ממוין מתחת ל-0
   };
 
   studs.sort((a, b) => {
@@ -960,7 +978,7 @@ function renderTable() {
 
   // ממוצע כיתה — על כל תלמידי הכיתות המוצגות
   const colSum = {}, colN = {};
-  const addAvg = (k, v) => { colSum[k] = (colSum[k] || 0) + v; colN[k] = (colN[k] || 0) + 1; };
+  const addAvg = (k, v) => { if (v == null) return; colSum[k] = (colSum[k] || 0) + v; colN[k] = (colN[k] || 0) + 1; };
   for (const s of all) {
     const m = cache.get(s);
     if (m.__overall) addAvg('__o', m.__overall.val);
