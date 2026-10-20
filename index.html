@@ -148,6 +148,14 @@
   .chart-tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
   .chart-tip .row b { font-variant-numeric: tabular-nums; }
 
+  /* דוח פשוט */
+  body.mode-simple .grades-only { display: none; }
+  td.cnt { font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  td.cnt.late-n  { color: #8e44ad; }
+  td.cnt.none-n  { color: #c0392b; font-weight: bold; }
+  td.cnt.zero    { color: #bbb; font-weight: normal; }
+  .partial { font-size: 0.72rem; color: #e67e22; margin-right: 4px; cursor: help; }
+
   td.overall-col { background: #f0f4f8; font-weight: bold; }
   thead th.overall-col { background: #1a252f; }
 
@@ -208,6 +216,12 @@
 
 <div class="filters">
   <div class="controls-row">
+    <div class="control-group">
+      <label class="ttl">סוג דוח:</label>
+      <label class="opt"><input type="radio" name="mode" value="grades" checked> דוח ציונים</label>
+      <label class="opt"><input type="radio" name="mode" value="simple"> דוח פשוט</label>
+    </div>
+    <div class="control-sep"></div>
     <div class="control-group" id="classGroup">
       <label class="ttl">כיתה:</label>
       <select id="classSelect"></select>
@@ -217,14 +231,14 @@
       <label class="ttl">תלמיד:</label>
       <input type="search" id="nameFilter" placeholder="סינון לפי שם…" autocomplete="off">
     </div>
-    <div class="control-sep"></div>
-    <div class="control-group">
+    <div class="control-sep grades-only"></div>
+    <div class="control-group grades-only">
       <label class="ttl">מדד:</label>
       <label class="opt"><input type="radio" name="measure" value="submit" checked> הגשה</label>
       <label class="opt"><input type="radio" name="measure" value="grade"> ציון</label>
     </div>
-    <div class="control-sep"></div>
-    <div class="control-group">
+    <div class="control-sep grades-only"></div>
+    <div class="control-group grades-only">
       <label class="ttl">הצג:</label>
       <label class="opt"><input type="radio" name="show" value="targol" checked> תרגולים</label>
       <label class="opt"><input type="radio" name="show" value="both"> תרגולים ותרגילים</label>
@@ -302,12 +316,13 @@ window.addEventListener('resize', () => window.__reportResize && window.__report
 
 // ─── הדוח: מופעל עם הנתונים (מוטמעים בדף, או מקובץ שנגרר בגרסת ההעלאה) ───
 function startReport(D) {
+document.body.classList.remove('mode-simple');
 const MULTI = D.classes.length > 1;
 const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
 const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
 
 const S = {
-  cls: 'all', measure: 'submit', show: 'targol', q: '',
+  mode: 'grades', cls: 'all', measure: 'submit', show: 'targol', q: '',
   threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
   from: 0, to: D.targolim.length - 1,
   sortCol: 'name', sortDir: 1, openT: null,
@@ -518,15 +533,54 @@ function highlightMap() {
 // ─── גרף: ערך כל תלמיד לאורך התרגולים (לפי סדר תאריך הפתיחה) ───
 let chartCtx = null;
 
+// ─── דוח פשוט: סטטוס לכל תרגול ───
+// תרגול נחשב כמוגש אם הוגש לפחות תרגיל נדרש אחד (תרגיל "חשוד" שהוגדר כ-0 לא נחשב הגשה).
+// באיחור — אם אחד התרגילים שהוגשו הוגש באיחור. ההורדה על איחור חלה פעם אחת על התרגול.
+const PS_NONE = 0, PS_ONTIME = 1, PS_LATE = 2;
+function practiceStatus(s, t) {
+  const v = cellVal(s, t);
+  if (!v) return null;
+  const req = Object.values(v.exv).filter(x => x.req);
+  const ok = req.filter(x => x.ok);
+  const st = !ok.length ? PS_NONE : ok.some(x => x.late) ? PS_LATE : PS_ONTIME;
+  return { st, done: ok.length, cnt: req.length, sus: v.sus, det: v.det };
+}
+function simpleVal(ps) {
+  if (!ps) return null;
+  return ps.st === PS_ONTIME ? 100 : ps.st === PS_LATE ? 100 - S.late : 0;
+}
+function simpleRow(s, vis) {
+  const r = { total: 0, on: 0, late: 0, none: 0, partial: 0, sus: 0, lists: [[], [], []] };
+  for (const t of vis) {
+    const ps = practiceStatus(s, t);
+    if (!ps) continue;
+    r.total++;
+    if (ps.st === PS_ONTIME) r.on++; else if (ps.st === PS_LATE) r.late++; else r.none++;
+    const part = ps.st !== PS_NONE && ps.done < ps.cnt;
+    if (part) r.partial++;
+    r.sus += ps.sus;
+    r.lists[ps.st].push(t + (part ? ` (${ps.done}/${ps.cnt} תרגילים)` : ''));
+  }
+  r.score = r.total ? (r.on + r.late * (1 - S.late / 100)) / r.total * 100 : null;
+  return r;
+}
+
+// ערך נקודה בגרף — לפי סוג הדוח
+function pointVal(s, t) {
+  if (S.mode === 'simple') return simpleVal(practiceStatus(s, t));
+  const v = cellVal(s, t); return v ? v.val : null;
+}
+
 function renderChart() {
   const box = document.getElementById('chart');
   const tip = document.getElementById('chartTip');
   const legend = document.getElementById('chartLegend');
   tip.style.display = 'none';
   const vis = visibleTargolim();
-  const isGrade = S.measure === 'grade';
-  document.getElementById('chartTitle').textContent =
-    (isGrade ? 'ציון' : 'אחוז הגשה') + ' לאורך זמן — לפי תרגול';
+  const isGrade = S.mode === 'grades' && S.measure === 'grade';
+  document.getElementById('chartTitle').textContent = S.mode === 'simple'
+    ? 'ציון הגשה לאורך זמן — לפי תרגול (בזמן = 100, באיחור = 100 פחות ההורדה, לא הוגש = 0)'
+    : (isGrade ? 'ציון' : 'אחוז הגשה') + ' לאורך זמן — לפי תרגול';
 
   if (vis.length < 2) {
     box.innerHTML = '<p class="empty-msg">צריך לפחות שני תרגולים מוצגים כדי להציג מגמה.</p>';
@@ -534,10 +588,10 @@ function renderChart() {
   }
 
   const all = shownStudents(), fs = filteredStudents(), hl = highlightMap();
-  const series = fs.map(s => ({ s, pts: vis.map(t => { const v = cellVal(s, t); return v ? v.val : null; }) }));
+  const series = fs.map(s => ({ s, pts: vis.map(t => pointVal(s, t)) }));
   const avg = vis.map(t => {
     let a = 0, n = 0;
-    for (const s of all) { const v = cellVal(s, t); if (v) { a += v.val; n++; } }
+    for (const s of all) { const v = pointVal(s, t); if (v != null) { a += v; n++; } }
     return n ? a / n : null;
   });
 
@@ -660,6 +714,94 @@ function onChartMove(e) {
   tip.style.top = Math.max(0, my - 10) + 'px';
 }
 
+// סיכום מתחת לטבלה — משותף לשני סוגי הדוח
+function summaryText(vis, shown, total, susTot) {
+  const appl = D.targolim.filter(t => applicable(t) && inRange(t));
+  const blocked = appl.filter(t => !eligibleView(t)).length;
+  let exOut = 0;
+  for (const c of shownClasses()) for (const t of vis) if (R[c][t] && R[c][t].elig)
+    exOut += R[c][t].eligEx.filter(x => !x).length;
+  const parts = [
+    shown === total ? `${shown} תלמידים` : `${shown} מתוך ${total} תלמידים`,
+    `${vis.length} תרגולים`,
+    S.mode === 'simple' ? 'דוח פשוט' : `מדד: ${S.measure === 'submit' ? 'הגשה' : 'ציון'}`,
+  ];
+  if (blocked) parts.push(`${blocked} תרגולים מתחת לסף`);
+  if (exOut)   parts.push(`${exOut} תרגילים לא נדרשים בתרגולים המוצגים`);
+  if (S.selfMin > 0) parts.push(`${susTot} תרגילים חשודים (עבודה עצמית < ${S.selfMin})`);
+  if (S.late > 0) parts.push(`הורדה על איחור ${S.late}%`);
+  return parts.join(' | ');
+}
+
+// ─── הדוח הפשוט ───
+function renderSimpleTable(vis) {
+  const wrap = document.getElementById('tableWrap');
+  const all = shownStudents(), studs = filteredStudents(), hl = highlightMap();
+  const rows = new Map(all.map(s => [s, simpleRow(s, vis)]));
+  const COLS = { overall: 'score', total: 'total', on: 'on', late: 'late', none: 'none' };
+
+  studs.sort((a, b) => {
+    if (S.sortCol === 'name') return S.sortDir * a.name.localeCompare(b.name, 'he');
+    if (S.sortCol === 'cls')  return S.sortDir * (a.cls.localeCompare(b.cls, 'he') || a.name.localeCompare(b.name, 'he'));
+    const k = COLS[S.sortCol] || 'score';
+    return S.sortDir * ((rows.get(a)[k] ?? -1) - (rows.get(b)[k] ?? -1));
+  });
+
+  const showCls = MULTI && S.cls === 'all';
+  const th = (col, label, cls = '', title = '') => {
+    const arrow = S.sortCol === col ? `<span class="arrow">${S.sortDir > 0 ? '↑' : '↓'}</span>` : '';
+    return `<th class="${cls}" data-col="${col}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}${arrow}</th>`;
+  };
+  const p = S.late;
+  let h = '<table><thead><tr>';
+  h += th('name', 'שם תלמיד', 'name-col');
+  if (showCls) h += th('cls', 'כיתה');
+  h += th('overall', 'ציון', 'overall-col',
+          `(הוגשו בזמן + הוגשו באיחור × ${100 - p}%) ÷ מספר התרגולים`);
+  h += th('total', 'מספר תרגולים', '', 'תרגולים נדרשים (אחרי הסינונים)');
+  h += th('on', 'הוגשו בזמן');
+  h += th('late', 'הוגשו באיחור', '', p ? `כל תרגול באיחור שווה ${100 - p}%` : 'ללא הורדה על איחור');
+  h += th('none', 'לא הוגשו');
+  h += '</tr></thead><tbody>';
+
+  const fmtS = v => v == null ? '-' : `<span class="badge ${badgeClass(v)}">${r1(v)}</span>`;
+  const cnt = (n, cls, title) =>
+    `<td class="cnt ${cls}${n ? '' : ' zero'}"${title && n ? ` title="${esc(title)}"` : ''}>${n}</td>`;
+
+  if (!studs.length) h += `<tr><td colspan="${showCls ? 7 : 6}" class="empty-msg">אין תלמידים שמתאימים לסינון "${esc(S.q)}"</td></tr>`;
+  for (const s of studs) {
+    const r = rows.get(s);
+    const c = hl.get(s.id);
+    const dot = c ? `<span class="dot" style="background:${c}"></span>` : '';
+    const part = r.partial ? `<span class="partial" title="${r.partial} תרגולים הוגשו חלקית — נספרים כמוגשים">◐${r.partial}</span>` : '';
+    const sus = r.sus ? `<span class="flag sus" title="${r.sus} תרגילים חשודים">⚠${r.sus > 1 ? r.sus : ''}</span>` : '';
+    h += `<tr><td class="name-col"><span class="stu" data-sid="${s.id}" title="הדגש בגרף">${dot}${esc(s.name)}</span></td>`;
+    if (showCls) h += `<td>${esc(s.cls)}</td>`;
+    h += `<td class="overall-col">${fmtS(r.score)}${part}${sus}</td>`;
+    h += `<td class="cnt">${r.total}</td>`;
+    h += cnt(r.on, '', r.lists[PS_ONTIME].join('\n'));
+    h += cnt(r.late, 'late-n', r.lists[PS_LATE].join('\n'));
+    h += cnt(r.none, 'none-n', r.lists[PS_NONE].join('\n'));
+    h += '</tr>';
+  }
+  // שורת ממוצע — על כל תלמידי הכיתות המוצגות
+  const avg = k => {
+    const vals = all.map(s => rows.get(s)[k]).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  const f1 = v => v == null ? '-' : (Math.round(v * 10) / 10).toString();
+  h += `<tr class="avg-row"><td class="name-col">ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}</td>`;
+  if (showCls) h += '<td></td>';
+  h += `<td class="overall-col">${fmtS(avg('score'))}</td>`;
+  for (const k of ['total', 'on', 'late', 'none']) h += `<td class="cnt">${f1(avg(k))}</td>`;
+  h += '</tr></tbody></table>';
+  wrap.innerHTML = h;
+
+  let susTot = 0;
+  for (const s of studs) susTot += rows.get(s).sus;
+  document.getElementById('summary').textContent = summaryText(vis, studs.length, all.length, susTot);
+}
+
 function renderTable() {
   const vis = visibleTargolim();
   const wrap = document.getElementById('tableWrap');
@@ -668,6 +810,7 @@ function renderTable() {
     document.getElementById('summary').textContent = '';
     return;
   }
+  if (S.mode === 'simple') { renderSimpleTable(vis); return; }
   const all = shownStudents();          // לממוצע הכיתה — לא מושפע מסינון השם
   const studs = filteredStudents();     // השורות בטבלה
   const hl = highlightMap();
@@ -853,6 +996,15 @@ bindRange('latePenalty', 'late',      v => v + '%');
 
 document.getElementById('selfAction').addEventListener('change', e => { S.selfAction = e.target.value; render(); });
 document.querySelectorAll('input[name=measure]').forEach(r => r.addEventListener('change', e => { S.measure = e.target.value; render(); }));
+document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', e => {
+  S.mode = e.target.value;
+  document.body.classList.toggle('mode-simple', S.mode === 'simple');
+  const ok = S.mode === 'simple'
+    ? ['name', 'cls', 'overall', 'total', 'on', 'late', 'none']
+    : ['name', 'cls', 'overall'];
+  if (!ok.includes(S.sortCol) && !(S.mode === 'grades' && D.targolim.includes(S.sortCol))) S.sortCol = 'name';
+  render();
+}));
 document.querySelectorAll('input[name=show]').forEach(r => r.addEventListener('change', e => {
   S.show = e.target.value;
   if (S.show === 'targol' && S.sortCol.startsWith('x\u0002')) S.sortCol = 'name';
