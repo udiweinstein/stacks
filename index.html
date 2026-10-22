@@ -150,6 +150,10 @@
   .chart-tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
   .chart-tip .row b { font-variant-numeric: tabular-nums; }
 
+  .table-tools { display: flex; justify-content: flex-start; margin-bottom: 8px; }
+  .table-tools .btn { font-size: 0.85rem; padding: 6px 14px; }
+  .table-tools .btn:disabled { opacity: 0.45; cursor: default; }
+
   /* נתונים גולמיים */
   #rawCard[hidden] { display: none; }
   #rawCard .hint { margin-bottom: 10px; }
@@ -311,6 +315,9 @@
   </div>
 </div>
 
+<div class="table-tools">
+  <button class="btn" id="btnExport" title="שומר את הטבלה המוצגת כקובץ Excel — עם הסינונים והמיון הנוכחיים">⬇ ייצוא לאקסל</button>
+</div>
 <div class="table-wrap" id="tableWrap"></div>
 <div class="summary" id="summary"></div>
 <div class="legend">
@@ -344,6 +351,174 @@ window.addEventListener('resize', () => window.__reportResize && window.__report
 // ─── הדוח: מופעל עם הנתונים (מוטמעים בדף, או מקובץ שנגרר בגרסת ההעלאה) ───
 function startReport(D) {
 document.body.classList.add('mode-simple');   // ברירת מחדל: דוח פשוט
+
+// ─── ייצוא לאקסל ───
+// הטבלה המוצגת נשמרת כנתונים (לא כ-HTML) בכל ציור: EXPORT לטבלה הראשית,
+// RAW_EXPORT לנתונים הגולמיים כשנבחר תלמיד יחיד.
+let EXPORT = null, RAW_EXPORT = null;
+
+function exportSettings() {
+  const vis = visibleTargolim();
+  const reportName = S.mode === 'simple' ? 'סיכום הגשות'
+    : S.measure === 'submit' ? 'הגשות לפי תרגול' : 'ציונים לפי תרגול';
+  const rows = [
+    ['קובץ', document.getElementById('reportTitle').textContent],
+    ['תאריך יצוא', new Date().toLocaleString('he-IL')],
+    ['סוג דוח', reportName],
+    ['כיתה', S.cls === 'all' ? (MULTI ? 'כל הכיתות' : D.classes[0]) : S.cls],
+  ];
+  if (S.q.trim()) rows.push(['סינון שם', S.q.trim()]);
+  rows.push(['הגשה מינימלית של הכיתה', S.threshold + '%']);
+  if (S.mode === 'simple')
+    rows.push(['השלמה מינימלית לתרגול', S.minDone ? S.minDone + '%' : 'תרגיל אחד']);
+  rows.push(['ציון עבודה עצמית מינימלי', S.selfMin
+    ? `${S.selfMin} (${S.selfAction === 'zero' ? 'תרגיל חשוד = 0' : 'סימון בלבד'})` : 'כבוי']);
+  rows.push(['הורדה על איחור', S.late + '%']);
+  rows.push(['תרגולים בדוח', vis.join(', ')]);
+  const manual = [];
+  for (const k in exOverride) {
+    const [t, e] = k.split('\u0001');
+    manual.push(`${t} — ${e}: ${exOverride[k] === 'in' ? 'נכלל ידנית' : 'הוצא ידנית'}`);
+  }
+  for (const t in tOverride) manual.push(`${t}: נכלל ידנית`);
+  if (manual.length) rows.push(['בחירות ידניות', manual.join('; ')]);
+  return { sheet: 'הגדרות', head: ['הגדרה', 'ערך'], rows };
+}
+
+function xmlEsc(s) {
+  return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function colName(i) { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - 1 - m) / 26; } return s; }
+
+// גיליון: כותרת מודגשת וקפואה, מימין לשמאל, סינון אוטומטי, ושורת ממוצע מודגשת בסוף
+function sheetXML(t) {
+  const all = [t.head, ...t.rows, ...(t.foot ? [t.foot] : [])];
+  const nCols = Math.max(...all.map(r => r.length));
+  const widths = Array.from({ length: nCols }, (_, c) =>
+    Math.min(45, Math.max(6, ...all.map(r => String(r[c] ?? '').length)) + 2));
+  const cell = (v, ref, style) => {
+    const s = style ? ` s="${style}"` : '';
+    if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"${s}><v>${v}</v></c>`;
+    if (v === '' || v == null) return style ? `<c r="${ref}"${s}/>` : '';
+    return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
+  };
+  let rowsXml = '';
+  all.forEach((r, ri) => {
+    const style = ri === 0 ? 1 : (t.foot && ri === all.length - 1) ? 2 : 0;
+    let cs = '';
+    for (let c = 0; c < nCols; c++) cs += cell(r[c], colName(c) + (ri + 1), style);
+    rowsXml += `<row r="${ri + 1}">${cs}</row>`;
+  });
+  const lastData = 1 + t.rows.length;
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<sheetViews><sheetView rightToLeft="1" workbookViewId="0">'
+    + '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+    + '<cols>' + widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('') + '</cols>'
+    + `<sheetData>${rowsXml}</sheetData>`
+    + (t.rows.length ? `<autoFilter ref="A1:${colName(nCols - 1)}${lastData}"/>` : '')
+    + '</worksheet>';
+}
+
+const STYLES_XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+  + '<fonts count="3"><font><sz val="11"/><name val="Arial"/></font>'
+  + '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>'
+  + '<font><b/><sz val="11"/><name val="Arial"/></font></fonts>'
+  + '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+  + '<fill><patternFill patternType="solid"><fgColor rgb="FF2C3E50"/><bgColor indexed="64"/></patternFill></fill>'
+  + '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF2F7"/><bgColor indexed="64"/></patternFill></fill></fills>'
+  + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+  + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+  + '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+  + '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf>'
+  + '<xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>'
+  + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+  + '</styleSheet>';
+
+function buildXlsx(sheets) {
+  const safe = n => n.replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 31);
+  const files = {
+    '[Content_Types].xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      + '<Default Extension="xml" ContentType="application/xml"/>'
+      + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
+      + '</Types>',
+    '_rels/.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+      + '</Relationships>',
+    'xl/workbook.xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + '<bookViews><workbookView/></bookViews><sheets>'
+      + sheets.map((s, i) => `<sheet name="${xmlEsc(safe(s.sheet))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')
+      + '</sheets></workbook>',
+    'xl/_rels/workbook.xml.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+      + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`
+      + '</Relationships>',
+    'xl/styles.xml': STYLES_XML,
+  };
+  sheets.forEach((s, i) => files[`xl/worksheets/sheet${i + 1}.xml`] = sheetXML(s));
+  return zipStore(files);
+}
+
+// קובץ ZIP ללא דחיסה (מספיק ל-xlsx, ובלי ספריות חיצוניות)
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  const now = new Date();
+  const dtime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const ddate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  for (const [name, text] of Object.entries(files)) {
+    const nb = enc.encode(name), data = enc.encode(text), crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true); lh.setUint16(10, dtime, true); lh.setUint16(12, ddate, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true);
+    lh.setUint16(26, nb.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nb, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, 0, true); ch.setUint16(12, dtime, true); ch.setUint16(14, ddate, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true);
+    ch.setUint16(28, nb.length, true); ch.setUint32(42, off, true);
+    central.push(new Uint8Array(ch.buffer), nb);
+    off += 30 + nb.length + data.length;
+  }
+  const cdSize = central.reduce((n, a) => n + a.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, Object.keys(files).length, true); end.setUint16(10, Object.keys(files).length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)],
+    { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+function doExport() {
+  if (!EXPORT) return;
+  const sheets = [EXPORT];
+  if (RAW_EXPORT) sheets.push(RAW_EXPORT);
+  sheets.push(exportSettings());
+  const blob = buildXlsx(sheets);
+  const base = document.getElementById('reportTitle').textContent.replace(/^דוח הגשות\s*—\s*/, '') || 'דוח';
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const fname = `${base} - ${EXPORT.sheet}${RAW_EXPORT ? ' - ' + RAW_EXPORT.title : ''} - ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.xlsx`
+    .replace(/[\\/:*?"<>|]/g, '_');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+document.getElementById('btnExport').addEventListener('click', doExport);
 const MULTI = D.classes.length > 1;
 const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
 const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
@@ -646,6 +821,7 @@ function rowUsage(s, t, e, visSet) {
 function renderRaw() {
   const card = document.getElementById('rawCard');
   const s = singleStudent();
+  RAW_EXPORT = null;
   if (!s || !D.rawHead) { card.hidden = true; return; }
   card.hidden = false;
   document.getElementById('rawTitle').textContent =
@@ -672,6 +848,13 @@ function renderRaw() {
   }
   h += '</tbody></table>';
   document.getElementById('rawWrap').innerHTML = h;
+  RAW_EXPORT = {
+    sheet: 'נתונים גולמיים',
+    title: s.name,
+    head: [...D.rawHead, 'בדוח'],
+    rows: rows.map(({ r }) => [...r.v.map(v => (v !== '' && v.trim() !== '' && isFinite(+v)) ? +v : v),
+                                rowUsage(s, r.t, r.e, visSet)[1]]),
+  };
 }
 
 function renderChart() {
@@ -903,6 +1086,20 @@ function renderSimpleTable(vis) {
   h += '</tr></tbody></table>';
   wrap.innerHTML = h;
 
+  // לייצוא — אותם ערכים כמו בטבלה, כמספרים
+  const n0 = v => v == null ? '' : Math.round(v);
+  const n1 = v => v == null ? '' : Math.round(v * 10) / 10;
+  EXPORT = {
+    sheet: 'סיכום הגשות',
+    head: ['שם תלמיד', ...(showCls ? ['כיתה'] : []), 'ציון', 'מספר תרגולים', 'הוגשו בזמן', 'הוגשו באיחור', 'לא הוגשו'],
+    rows: studs.map(s => {
+      const r = rows.get(s);
+      return [s.name, ...(showCls ? [s.cls] : []), n0(r.score), r.total, r.on, r.late, r.none];
+    }),
+    foot: [`ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}`, ...(showCls ? [''] : []),
+           n0(avg('score')), n1(avg('total')), n1(avg('on')), n1(avg('late')), n1(avg('none'))],
+  };
+
   let susTot = 0;
   for (const s of studs) susTot += rows.get(s).sus;
   document.getElementById('summary').textContent = summaryText(vis, studs.length, all.length, susTot);
@@ -911,11 +1108,14 @@ function renderSimpleTable(vis) {
 function renderTable() {
   const vis = visibleTargolim();
   const wrap = document.getElementById('tableWrap');
+  EXPORT = null;
   if (!vis.length) {
     wrap.innerHTML = '<p class="empty-msg">אין תרגולים להצגה — בחר תרגול או הורד את סף ההגשה.</p>';
     document.getElementById('summary').textContent = '';
+    document.getElementById('btnExport').disabled = true;
     return;
   }
+  document.getElementById('btnExport').disabled = false;
   if (S.mode === 'simple') { renderSimpleTable(vis); return; }
   const all = shownStudents();          // לממוצע הכיתה — לא מושפע מסינון השם
   const studs = filteredStudents();     // השורות בטבלה
@@ -1025,6 +1225,28 @@ function renderTable() {
   }
   h += '</tr></tbody></table>';
   wrap.innerHTML = h;
+
+  // לייצוא — אותם ערכים כמו בטבלה, כמספרים. ריק = התרגול לא ניתן לכיתה של התלמיד
+  const xv = v => !v ? '' : v.val == null ? 'ללא ציון' : Math.round(v.val);
+  const xe = x => !x ? '' : !x.req ? 'לא נדרש' : x.val == null ? 'ללא ציון' : Math.round(x.val);
+  const xa = k => colN[k] ? Math.round(colSum[k] / colN[k]) : '';
+  const head = ['שם תלמיד', ...(showCls ? ['כיתה'] : []), 'סה"כ'];
+  for (const t of vis) { head.push(t); if (showEx) for (const e of exCols[t]) head.push(`${t} — ${e}`); }
+  const foot = [`ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}`, ...(showCls ? [''] : []), xa('__o')];
+  for (const t of vis) { foot.push(xa(t)); if (showEx) for (const e of exCols[t]) foot.push(xa(exColKey(t, e))); }
+  EXPORT = {
+    sheet: S.measure === 'submit' ? 'הגשות לפי תרגול' : 'ציונים לפי תרגול',
+    head, foot,
+    rows: studs.map(s => {
+      const m = cache.get(s);
+      const r = [s.name, ...(showCls ? [s.cls] : []), xv(m.__overall)];
+      for (const t of vis) {
+        r.push(xv(m[t]));
+        if (showEx) for (const e of exCols[t]) r.push(xe(m[t] ? m[t].exv[e] : null));
+      }
+      return r;
+    }),
+  };
 
   // סיכום
   const appl = D.targolim.filter(t => applicable(t) && inRange(t));
