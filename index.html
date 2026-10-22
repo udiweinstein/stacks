@@ -195,6 +195,32 @@
   td.overall-col { background: #f0f4f8; font-weight: bold; }
   thead th.overall-col { background: #1a252f; }
 
+  /* ─── טבלה גדולה: גלילה בתוך מסגרת בגובה החלון, כותרת/שם/ממוצע קבועים ─── */
+  #tableWrap { max-height: calc(100vh - 40px); overflow: auto; overscroll-behavior: contain; }
+  #tableWrap table { border-collapse: separate; border-spacing: 0; }
+  #tableWrap td { background: #fff; white-space: nowrap; }
+  #tableWrap tr:hover td { background: #f7f9fb; }
+  #tableWrap td.overall-col { background: #f0f4f8; }
+  #tableWrap td.ex-col { background: #fbfcfd; }
+  /* שורת הכותרת */
+  #tableWrap thead th { position: sticky; top: 0; z-index: 2; }
+  #tableWrap thead tr.sub-head th { top: var(--head1, 38px); }
+  /* עמודת שם התלמיד — קבועה בצד ימין */
+  #tableWrap th.name-col, #tableWrap td.name-col {
+    position: sticky; right: 0; z-index: 1; box-shadow: -2px 0 0 #dfe5ec;
+  }
+  #tableWrap thead th.name-col { z-index: 4; box-shadow: -2px 0 0 #1a252f; }
+  /* שורת הממוצע — קבועה בתחתית */
+  #tableWrap tr.avg-row td { position: sticky; bottom: 0; z-index: 1; background: #eef2f7;
+    border-top: none; box-shadow: 0 -2px 0 #c9d3de; }
+  #tableWrap tr.avg-row td.name-col { z-index: 3; box-shadow: 0 -2px 0 #c9d3de, -2px 0 0 #dfe5ec; }
+
+  /* נתונים גולמיים — אותו רעיון */
+  .raw-wrap { max-height: 70vh; overflow: auto; }
+  .raw-wrap table { border-collapse: separate; border-spacing: 0; }
+  .raw-wrap thead th { position: sticky; top: 0; z-index: 2; }
+  .raw-wrap td { background: #fff; }
+
   .summary { margin-top: 12px; font-size: 0.82rem; color: #888; }
   .legend { margin-top: 6px; font-size: 0.78rem; color: #999; }
   .empty-msg { text-align: center; padding: 40px; color: #aaa; }
@@ -1251,6 +1277,9 @@ function renderTable() {
   }
   h += '</tr></tbody></table>';
   wrap.innerHTML = h;
+  // שורת הכותרת השנייה (שמות התרגילים) נצמדת מתחת לראשונה
+  const fr = wrap.querySelector('thead tr');
+  if (fr) wrap.style.setProperty('--head1', fr.getBoundingClientRect().height + 'px');
 
   // לייצוא — אותם ערכים כמו בטבלה, כמספרים. ריק = התרגול לא ניתן לכיתה של התלמיד
   const xv = v => !v ? '' : v.val == null ? 'ללא ציון' : Math.round(v.val);
