@@ -161,6 +161,8 @@
   .row-end .btn { font-size: 0.85rem; padding: 6px 14px; white-space: nowrap; }
   .row-end .btn:disabled { opacity: 0.45; cursor: default; }
   .app-only { display: none !important; }
+  .settings-note { font-size: 0.78rem; color: #1e7e34; background: #e9f7ee; border-radius: 6px; padding: 3px 9px; white-space: nowrap; }
+  .settings-note[hidden] { display: none; }
 
   /* הסתרה / הצגה של בחירת התרגולים */
   .section-toggle {
@@ -299,6 +301,8 @@
     </div>
     <div class="control-group row-end">
       <label class="btn app-only" id="btnLoad" title="אפשר גם לגרור קובץ חדש לכל מקום בדף">📂 טען קובץ אחר<input type="file" id="fileInput2" accept=".csv,text/csv,text/plain" hidden></label>
+      <span class="settings-note" id="settingsNote" hidden></span>
+      <button class="btn" id="btnResetAll" title="מחזיר את כל ההגדרות לברירת המחדל ושוכח את ההגדרות השמורות">↺ אפס הגדרות</button>
       <button class="btn" id="btnExport" title="שומר את הטבלה המוצגת כקובץ Excel — עם הסינונים והמיון הנוכחיים">⬇ ייצוא לאקסל</button>
     </div>
   </div>
@@ -1183,6 +1187,7 @@ function renderSimpleTable(vis) {
 }
 
 function renderTable() {
+  if (typeof saveSettings === 'function') saveSettings();
   const vis = visibleTargolim();
   const wrap = document.getElementById('tableWrap');
   EXPORT = null;
@@ -1536,7 +1541,116 @@ document.getElementById('btnReset').addEventListener('click', () => {
   render();
 });
 
+// ─── זכירת הגדרות בין ביקורים ───
+// נשמר בדפדפן הזה בלבד. תרגולים ותרגילים נשמרים לפי שם, כך שבייצוא של השבוע הבא
+// אותן בחירות חלות שוב; תרגולים חדשים נכללים כברירת מחדל. סינון שם והדגשות לא נשמרים.
+const STORE_KEY = 'gradesReport.settings.v1';
+const DEFAULTS = {
+  mode: 'simple', measure: 'submit', show: 'targol', cls: S.cls,
+  threshold: 0, selfMin: 0, late: 0, dFrom: null, dTo: null,
+  from: 0, to: D.targolim.length - 1, sortCol: 'name', sortDir: 1,
+};
+let restoring = false;
+
+function saveSettings() {
+  if (restoring) return;
+  const open = document.getElementById('btnTargolim').getAttribute('aria-expanded') === 'true';
+  const data = {
+    mode: S.mode, measure: S.measure, show: S.show, cls: S.cls,
+    threshold: S.threshold, selfMin: S.selfMin, late: S.late,
+    dFrom: S.dFrom ? iso(S.dFrom) : null, dTo: S.dTo ? iso(S.dTo) : null,
+    rangeFrom: S.from > 0 ? D.targolim[S.from] : null,
+    rangeTo: S.to < D.targolim.length - 1 ? D.targolim[S.to] : null,
+    deselected: D.targolim.filter(t => !selected.has(t)),
+    exOverride: Object.entries(exOverride).map(([k, v]) => [...k.split('\u0001'), v]),
+    tOverride: Object.keys(tOverride),
+    targolimOpen: open, sortCol: S.sortCol, sortDir: S.sortDir,
+  };
+  // כשהכל בברירת המחדל — לא שומרים כלום (כדי שלא תופיע הודעת "שוחזרו" סתם)
+  const isDefault = data.mode === DEFAULTS.mode && data.measure === DEFAULTS.measure && data.show === DEFAULTS.show
+    && data.cls === DEFAULTS.cls && !data.threshold && !data.selfMin && !data.late && !data.dFrom && !data.dTo
+    && !data.rangeFrom && !data.rangeTo && !data.deselected.length && !data.exOverride.length
+    && !data.tOverride.length && data.targolimOpen && data.sortCol === 'name' && data.sortDir === 1;
+  try {
+    if (isDefault) localStorage.removeItem(STORE_KEY);
+    else localStorage.setItem(STORE_KEY, JSON.stringify(data));
+  } catch (e) { /* פרטי / חסום — לא נורא */ }
+}
+
+function loadSettings() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { d = null; }
+  if (!d || typeof d !== 'object') return false;
+  const num = (v, def) => (typeof v === 'number' && v >= 0 && v <= 100) ? v : def;
+  if (['simple', 'grades'].includes(d.mode)) S.mode = d.mode;
+  if (['submit', 'grade'].includes(d.measure)) S.measure = d.measure;
+  if (['targol', 'both'].includes(d.show)) S.show = d.show;
+  if (MULTI && (d.cls === 'all' || D.classes.includes(d.cls))) S.cls = d.cls;
+  S.threshold = num(d.threshold, 0); S.selfMin = num(d.selfMin, 0); S.late = num(d.late, 0);
+  S.dFrom = d.dFrom ? parseIso(d.dFrom) : null; S.dTo = d.dTo ? parseIso(d.dTo) : null;
+  const fi = D.targolim.indexOf(d.rangeFrom), ti = D.targolim.indexOf(d.rangeTo);
+  S.from = fi >= 0 ? fi : 0; S.to = ti >= 0 ? ti : D.targolim.length - 1;
+  if (S.from > S.to) [S.from, S.to] = [0, D.targolim.length - 1];
+  for (const t of d.deselected || []) if (D.targolim.includes(t)) selected.delete(t);
+  for (const [t, e, v] of d.exOverride || []) if (D.targolim.includes(t) && (v === 'in' || v === 'out')) exOverride[key(t, e)] = v;
+  for (const t of d.tOverride || []) if (D.targolim.includes(t)) tOverride[t] = 'in';
+  if (typeof d.sortCol === 'string') { S.sortCol = d.sortCol; S.sortDir = d.sortDir === -1 ? -1 : 1; }
+  setTargolimOpen(d.targolimOpen !== false);
+  return true;
+}
+
+function setTargolimOpen(open) {
+  const btn = document.getElementById('btnTargolim');
+  btn.setAttribute('aria-expanded', String(open));
+  btn.querySelector('.arrow-ic').textContent = open ? '▾' : '◂';
+  btn.title = open ? 'הסתר את בחירת התרגולים' : 'הצג את בחירת התרגולים';
+  document.getElementById('targolimSection').hidden = !open;
+}
+
+// מעדכן את כל הבקרות בדף לפי S
+function syncUI() {
+  const rep = S.mode === 'simple' ? 'simple' : S.measure;
+  document.querySelector(`input[name=report][value=${rep}]`).checked = true;
+  document.querySelector(`input[name=show][value=${S.show}]`).checked = true;
+  document.body.classList.toggle('mode-simple', S.mode === 'simple');
+  if (MULTI) classSel.value = S.cls;
+  const setR = (id, v, txt) => { document.getElementById(id).value = v; document.getElementById(id + 'Val').textContent = txt; };
+  setR('threshold', S.threshold, S.threshold + '%');
+  setR('selfMin', S.selfMin, S.selfMin ? '< ' + S.selfMin : 'כבוי');
+  setR('latePenalty', S.late, S.late + '%');
+  dFromEl.value = S.dFrom ? iso(S.dFrom) : '';
+  dToEl.value = S.dTo ? iso(S.dTo) : '';
+  selFrom.value = S.from; selTo.value = S.to;
+}
+
+function resetAll() {
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  Object.assign(S, DEFAULTS, { q: S.q, openT: null });
+  D.targolim.forEach(t => selected.add(t));
+  for (const k in exOverride) delete exOverride[k];
+  for (const k in tOverride) delete tOverride[k];
+  setTargolimOpen(true);
+  syncUI();
+  render();
+  flashNote('ההגדרות אופסו לברירת המחדל');
+}
+
+function flashNote(text) {
+  const el = document.getElementById('settingsNote');
+  el.textContent = text; el.hidden = false;
+  clearTimeout(flashNote.t); flashNote.t = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+document.getElementById('btnResetAll').addEventListener('click', resetAll);
+// שמירה גם על פעולות שמציירות רק את הטבלה (מיון, תצוגת תרגילים) או רק פותחות/סוגרות
+document.getElementById('btnTargolim').addEventListener('click', () => saveSettings());
+
+restoring = true;
+const restored = loadSettings();
+syncUI();
+restoring = false;
 render();
+if (restored) flashNote('שוחזרו ההגדרות מהביקור הקודם');
 }  // startReport
 
 
