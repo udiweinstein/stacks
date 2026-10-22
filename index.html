@@ -190,7 +190,7 @@
   td.cnt.late-n  { color: #8e44ad; }
   td.cnt.none-n  { color: #c0392b; font-weight: bold; }
   td.cnt.zero    { color: #bbb; font-weight: normal; }
-  .partial { font-size: 0.72rem; color: #e67e22; margin-right: 4px; cursor: help; }
+  td.cnt.part-n  { color: #b9770e; }
 
   td.overall-col { background: #f0f4f8; font-weight: bold; }
   thead th.overall-col { background: #1a252f; }
@@ -303,12 +303,6 @@
       <input type="range" id="threshold" min="0" max="100" value="0" step="5">
       <span class="val" id="thresholdVal">0%</span>
     </div>
-    <div class="control-sep simple-only"></div>
-    <div class="control-group simple-only" title="כמה מהתרגילים הנדרשים בתרגול התלמיד צריך להגיש כדי שהתרגול ייחשב כמוגש">
-      <label class="ttl">השלמה מינימלית לתרגול:</label>
-      <input type="range" id="minDone" min="0" max="100" value="100" step="10">
-      <span class="val" id="minDoneVal">100%</span>
-    </div>
     <div class="control-sep"></div>
     <div class="control-group" title="תרגיל עם ציון עבודה עצמית נמוך מזה נחשב חשוד">
       <label class="ttl">ציון עבודה עצמית מינימלי:</label>
@@ -406,7 +400,7 @@ function exportSettings() {
   if (S.q.trim()) rows.push(['סינון שם', S.q.trim()]);
   rows.push(['הגשה מינימלית של הכיתה', S.threshold + '%']);
   if (S.mode === 'simple')
-    rows.push(['השלמה מינימלית לתרגול', S.minDone ? S.minDone + '%' : 'תרגיל אחד']);
+    rows.push(['תרגול נחשב מוגש', 'רק אם הוגשו כל התרגילים הנדרשים בו']);
   rows.push(['ציון עבודה עצמית מינימלי', S.selfMin
     ? `${S.selfMin} (${S.selfAction === 'zero' ? 'תרגיל חשוד = 0' : 'סימון בלבד'})` : 'כבוי']);
   rows.push(['הורדה על איחור', S.late + '%']);
@@ -575,7 +569,7 @@ const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
 const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
 
 const S = {
-  mode: 'simple', minDone: 100, cls: 'all', measure: 'submit', show: 'targol', q: '',
+  mode: 'simple', cls: 'all', measure: 'submit', show: 'targol', q: '',
   threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
   from: 0, to: D.targolim.length - 1,
   sortCol: 'name', sortDir: 1, openT: null,
@@ -802,17 +796,19 @@ function highlightMap() {
 let chartCtx = null;
 
 // ─── דוח פשוט: סטטוס לכל תרגול ───
-// תרגול נחשב כמוגש אם התלמיד הגיש לפחות S.minDone% מהתרגילים הנדרשים בו
-// (0 = לפחות תרגיל אחד). תרגיל "חשוד" שהוגדר כ-0 לא נחשב הגשה.
-// באיחור — אם אחד התרגילים שהוגשו הוגש באיחור. ההורדה על איחור חלה פעם אחת על התרגול.
-const PS_NONE = 0, PS_ONTIME = 1, PS_LATE = 2;
+// תרגול נחשב מוגש רק אם התלמיד הגיש את כל התרגילים הנדרשים בו
+// (התרגילים שלא ביקשת כבר סוננו על ידי הסף הכיתתי). תרגיל "חשוד" שהוגדר כ-0 לא נחשב הגשה.
+// באיחור — אם אחד התרגילים הוגש באיחור. ההורדה על איחור חלה פעם אחת על התרגול.
+// הוגש חלקית — הוגש חלק מהתרגילים: מוצג בנפרד, ובציון נספר כלא הוגש.
+const PS_NONE = 0, PS_ONTIME = 1, PS_LATE = 2, PS_PARTIAL = 3;
 function practiceStatus(s, t) {
   const v = cellVal(s, t);
   if (!v) return null;
   const req = Object.values(v.exv).filter(x => x.req);
   const ok = req.filter(x => x.ok);
-  const enough = ok.length > 0 && ok.length / req.length * 100 >= S.minDone - 1e-9;
-  const st = !enough ? PS_NONE : ok.some(x => x.late) ? PS_LATE : PS_ONTIME;
+  const st = !ok.length ? PS_NONE
+           : ok.length < req.length ? PS_PARTIAL
+           : ok.some(x => x.late) ? PS_LATE : PS_ONTIME;
   return { st, done: ok.length, cnt: req.length, sus: v.sus, det: v.det };
 }
 function simpleVal(ps) {
@@ -820,18 +816,17 @@ function simpleVal(ps) {
   return ps.st === PS_ONTIME ? 100 : ps.st === PS_LATE ? 100 - S.late : 0;
 }
 function simpleRow(s, vis) {
-  const r = { total: 0, on: 0, late: 0, none: 0, partial: 0, sus: 0, lists: [[], [], []] };
+  const r = { total: 0, on: 0, late: 0, partial: 0, none: 0, sus: 0, lists: [[], [], [], []] };
   for (const t of vis) {
     const ps = practiceStatus(s, t);
     if (!ps) continue;
     r.total++;
-    if (ps.st === PS_ONTIME) r.on++; else if (ps.st === PS_LATE) r.late++; else r.none++;
-    const part = ps.st !== PS_NONE && ps.done < ps.cnt;
-    if (part) r.partial++;
+    if (ps.st === PS_ONTIME) r.on++;
+    else if (ps.st === PS_LATE) r.late++;
+    else if (ps.st === PS_PARTIAL) r.partial++;
+    else r.none++;
     r.sus += ps.sus;
-    // ב"לא הוגשו" — מציין אם הוגש חלק שלא הגיע למינימום
-    const note = ps.done < ps.cnt && ps.done > 0 ? ` (${ps.done}/${ps.cnt} תרגילים)` : '';
-    r.lists[ps.st].push(t + note);
+    r.lists[ps.st].push(t + (ps.st === PS_PARTIAL ? ` (${ps.done}/${ps.cnt} תרגילים)` : ''));
   }
   r.score = r.total ? (r.on + r.late * (1 - S.late / 100)) / r.total * 100 : null;
   return r;
@@ -1064,7 +1059,7 @@ function summaryText(vis, shown, total, susTot) {
     shown === total ? `${shown} תלמידים` : `${shown} מתוך ${total} תלמידים`,
     `${vis.length} תרגולים`,
     S.mode === 'simple'
-      ? `סיכום הגשות — תרגול מוגש אם הוגשו ${S.minDone >= 100 ? 'כל התרגילים הנדרשים' : S.minDone ? `לפחות ${S.minDone}% מהתרגילים הנדרשים` : 'לפחות תרגיל אחד'}`
+      ? 'סיכום הגשות — תרגול נחשב מוגש רק אם הוגשו כל התרגילים הנדרשים בו'
       : (S.measure === 'submit' ? 'הגשות לפי תרגול' : 'ציונים לפי תרגול'),
   ];
   if (blocked) parts.push(`${blocked} תרגולים מתחת לסף`);
@@ -1079,7 +1074,7 @@ function renderSimpleTable(vis) {
   const wrap = document.getElementById('tableWrap');
   const all = shownStudents(), studs = filteredStudents(), hl = highlightMap();
   const rows = new Map(all.map(s => [s, simpleRow(s, vis)]));
-  const COLS = { overall: 'score', total: 'total', on: 'on', late: 'late', none: 'none' };
+  const COLS = { overall: 'score', total: 'total', on: 'on', late: 'late', partial: 'partial', none: 'none' };
 
   studs.sort((a, b) => {
     if (S.sortCol === 'name') return S.sortDir * a.name.localeCompare(b.name, 'he');
@@ -1098,30 +1093,32 @@ function renderSimpleTable(vis) {
   h += th('name', 'שם תלמיד', 'name-col');
   if (showCls) h += th('cls', 'כיתה');
   h += th('overall', 'ציון', 'overall-col',
-          `(הוגשו בזמן + הוגשו באיחור × ${100 - p}%) ÷ מספר התרגולים`);
+          `(הוגשו בזמן + הוגשו באיחור × ${100 - p}%) ÷ מספר התרגולים. תרגול שהוגש חלקית נספר כלא הוגש.`);
   h += th('total', 'מספר תרגולים', '', 'תרגולים נדרשים (אחרי הסינונים)');
-  h += th('on', 'הוגשו בזמן');
-  h += th('late', 'הוגשו באיחור', '', p ? `כל תרגול באיחור שווה ${100 - p}%` : 'ללא הורדה על איחור');
-  h += th('none', 'לא הוגשו');
+  h += th('on', 'הוגשו בזמן', '', 'כל התרגילים הנדרשים הוגשו בזמן');
+  h += th('late', 'הוגשו באיחור', '', 'כל התרגילים הנדרשים הוגשו, לפחות אחד באיחור'
+          + (p ? ` — כל תרגול כזה שווה ${100 - p}%` : ''));
+  h += th('partial', 'הוגשו חלקית', '', 'הוגשו רק חלק מהתרגילים הנדרשים — בציון נספר כלא הוגש');
+  h += th('none', 'לא הוגשו', '', 'לא הוגש אף תרגיל נדרש');
   h += '</tr></thead><tbody>';
 
   const fmtS = v => v == null ? '-' : `<span class="badge ${badgeClass(v)}">${r1(v)}</span>`;
   const cnt = (n, cls, title) =>
     `<td class="cnt ${cls}${n ? '' : ' zero'}"${title && n ? ` title="${esc(title)}"` : ''}>${n}</td>`;
 
-  if (!studs.length) h += `<tr><td colspan="${showCls ? 7 : 6}" class="empty-msg">אין תלמידים שמתאימים לסינון "${esc(S.q)}"</td></tr>`;
+  if (!studs.length) h += `<tr><td colspan="${showCls ? 8 : 7}" class="empty-msg">אין תלמידים שמתאימים לסינון "${esc(S.q)}"</td></tr>`;
   for (const s of studs) {
     const r = rows.get(s);
     const c = hl.get(s.id);
     const dot = c ? `<span class="dot" style="background:${c}"></span>` : '';
-    const part = r.partial ? `<span class="partial" title="${r.partial} תרגולים הוגשו חלקית (מעל המינימום) — נספרים כמוגשים">◐${r.partial}</span>` : '';
     const sus = r.sus ? `<span class="flag sus" title="${r.sus} תרגילים חשודים">⚠${r.sus > 1 ? r.sus : ''}</span>` : '';
     h += `<tr><td class="name-col"><span class="stu" data-sid="${s.id}" title="הדגש בגרף">${dot}${esc(s.name)}</span></td>`;
     if (showCls) h += `<td>${esc(s.cls)}</td>`;
-    h += `<td class="overall-col">${fmtS(r.score)}${part}${sus}</td>`;
+    h += `<td class="overall-col">${fmtS(r.score)}${sus}</td>`;
     h += `<td class="cnt">${r.total}</td>`;
     h += cnt(r.on, '', r.lists[PS_ONTIME].join('\n'));
     h += cnt(r.late, 'late-n', r.lists[PS_LATE].join('\n'));
+    h += cnt(r.partial, 'part-n', r.lists[PS_PARTIAL].join('\n'));
     h += cnt(r.none, 'none-n', r.lists[PS_NONE].join('\n'));
     h += '</tr>';
   }
@@ -1134,7 +1131,7 @@ function renderSimpleTable(vis) {
   h += `<tr class="avg-row"><td class="name-col">ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}</td>`;
   if (showCls) h += '<td></td>';
   h += `<td class="overall-col">${fmtS(avg('score'))}</td>`;
-  for (const k of ['total', 'on', 'late', 'none']) h += `<td class="cnt">${f1(avg(k))}</td>`;
+  for (const k of ['total', 'on', 'late', 'partial', 'none']) h += `<td class="cnt">${f1(avg(k))}</td>`;
   h += '</tr></tbody></table>';
   wrap.innerHTML = h;
 
@@ -1143,13 +1140,13 @@ function renderSimpleTable(vis) {
   const n1 = v => v == null ? '' : Math.round(v * 10) / 10;
   EXPORT = {
     sheet: 'סיכום הגשות',
-    head: ['שם תלמיד', ...(showCls ? ['כיתה'] : []), 'ציון', 'מספר תרגולים', 'הוגשו בזמן', 'הוגשו באיחור', 'לא הוגשו'],
+    head: ['שם תלמיד', ...(showCls ? ['כיתה'] : []), 'ציון', 'מספר תרגולים', 'הוגשו בזמן', 'הוגשו באיחור', 'הוגשו חלקית', 'לא הוגשו'],
     rows: studs.map(s => {
       const r = rows.get(s);
-      return [s.name, ...(showCls ? [s.cls] : []), n0(r.score), r.total, r.on, r.late, r.none];
+      return [s.name, ...(showCls ? [s.cls] : []), n0(r.score), r.total, r.on, r.late, r.partial, r.none];
     }),
     foot: [`ממוצע ${S.cls === 'all' && MULTI ? 'כללי' : 'כיתה'}`, ...(showCls ? [''] : []),
-           n0(avg('score')), n1(avg('total')), n1(avg('on')), n1(avg('late')), n1(avg('none'))],
+           n0(avg('score')), n1(avg('total')), n1(avg('on')), n1(avg('late')), n1(avg('partial')), n1(avg('none'))],
   };
 
   let susTot = 0;
@@ -1376,7 +1373,6 @@ function bindRange(id, prop, fmt) {
 bindRange('threshold',   'threshold', v => v + '%');
 bindRange('selfMin',     'selfMin',   v => v ? '< ' + v : 'כבוי');
 bindRange('latePenalty', 'late',      v => v + '%');
-bindRange('minDone',     'minDone',   v => v ? v + '%' : 'תרגיל אחד');
 
 document.getElementById('selfAction').addEventListener('change', e => { S.selfAction = e.target.value; render(); });
 // בחירת הדוח: סיכום הגשות (פשוט) / הגשות לפי תרגול / ציונים לפי תרגול
@@ -1386,7 +1382,7 @@ document.querySelectorAll('input[name=report]').forEach(r => r.addEventListener(
   if (v !== 'simple') S.measure = v;
   document.body.classList.toggle('mode-simple', S.mode === 'simple');
   const ok = S.mode === 'simple'
-    ? ['name', 'cls', 'overall', 'total', 'on', 'late', 'none']
+    ? ['name', 'cls', 'overall', 'total', 'on', 'late', 'partial', 'none']
     : ['name', 'cls', 'overall'];
   if (!ok.includes(S.sortCol) && !(S.mode === 'grades' && D.targolim.includes(S.sortCol))) S.sortCol = 'name';
   render();
