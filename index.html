@@ -314,10 +314,7 @@
       <label class="ttl">ציון עבודה עצמית מינימלי:</label>
       <input type="range" id="selfMin" min="0" max="100" value="0" step="5">
       <span class="val" id="selfMinVal">כבוי</span>
-      <select id="selfAction">
-        <option value="zero">תרגיל חשוד = 0</option>
-        <option value="mark">סמן בלבד</option>
-      </select>
+      <span class="hint">תרגיל חשוד = 0</span>
     </div>
     <div class="control-sep"></div>
     <div class="control-group" title="כמה אחוזים להוריד מתרגיל שהוגש באיחור">
@@ -415,7 +412,7 @@ function exportSettings() {
   if (S.mode === 'simple')
     rows.push(['תרגול נחשב מוגש', 'רק אם הוגשו כל התרגילים הנדרשים בו']);
   rows.push(['ציון עבודה עצמית מינימלי', S.selfMin
-    ? `${S.selfMin} (${S.selfAction === 'zero' ? 'תרגיל חשוד = 0' : 'סימון בלבד'})` : 'כבוי']);
+    ? `${S.selfMin} (תרגיל חשוד = 0)` : 'כבוי']);
   rows.push(['הורדה על איחור', S.late + '%']);
   if (S.dFrom || S.dTo) {
     const f = d => d ? d.toLocaleDateString('he-IL') : '—';
@@ -587,7 +584,7 @@ const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
 
 const S = {
   mode: 'simple', cls: 'all', measure: 'submit', show: 'targol', q: '',
-  threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
+  threshold: 0, selfMin: 0, late: 0,
   from: 0, to: D.targolim.length - 1,
   dFrom: null, dTo: null,            // טווח תאריכים (Date) — null = ללא הגבלה
   sortCol: 'name', sortDir: 1, openT: null,
@@ -702,8 +699,8 @@ function cellVal(s, t) {
     let ok = st !== ST_NONE, isSus = false;
     const isLate = st === ST_LATE;
     if (ok && S.selfMin > 0 && sw != null && sw < S.selfMin) {
-      sus++; isSus = true; parts.push('⚠ חשוד');
-      if (S.selfAction === 'zero') { ok = false; parts.push('→ 0'); }
+      // תרגיל חשוד (ציון עבודה עצמית מתחת לסף) נספר תמיד כ-0 — לא הוגש
+      sus++; isSus = true; ok = false; parts.push('⚠ חשוד → 0');
     }
     const factor = ok ? (isLate ? 1 - p : 1) : 0;
     if (ok && isLate) { late++; if (p > 0) parts.push(`−${S.late}%`); }
@@ -889,7 +886,7 @@ function rowUsage(s, t, e, visSet) {
   if (!r.eligEx[i]) return ['off', 'תרגיל לא נדרש'];
   const v = cellVal(s, t), x = v && v.exv[e];
   if (!x) return ['off', '-'];
-  if (x.sus) return ['sus', S.selfAction === 'zero' ? '⚠ חשוד — נספר כ-0' : '⚠ חשוד'];
+  if (x.sus) return ['sus', '⚠ חשוד — נספר כ-0'];
   if (!x.ok) return ['no', 'לא הוגש'];
   const ng = x.noGrade ? ' — ללא ציון, לא בממוצע הציון' : '';
   if (x.late) return ['late', (S.late ? `באיחור (−${S.late}%)` : 'באיחור') + ng];
@@ -1409,7 +1406,6 @@ bindRange('threshold',   'threshold', v => v + '%');
 bindRange('selfMin',     'selfMin',   v => v ? '< ' + v : 'כבוי');
 bindRange('latePenalty', 'late',      v => v + '%');
 
-document.getElementById('selfAction').addEventListener('change', e => { S.selfAction = e.target.value; render(); });
 // בחירת הדוח: סיכום הגשות (פשוט) / הגשות לפי תרגול / ציונים לפי תרגול
 document.querySelectorAll('input[name=report]').forEach(r => r.addEventListener('change', e => {
   const v = e.target.value;
