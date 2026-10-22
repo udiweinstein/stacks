@@ -150,9 +150,22 @@
   .chart-tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
   .chart-tip .row b { font-variant-numeric: tabular-nums; }
 
-  .table-tools { display: flex; justify-content: flex-start; margin-bottom: 8px; }
-  .table-tools .btn { font-size: 0.85rem; padding: 6px 14px; }
-  .table-tools .btn:disabled { opacity: 0.45; cursor: default; }
+  /* כפתורים בסוף שורת סוג הדוח */
+  .control-group.row-end { margin-inline-start: auto; }
+  .row-end .btn { font-size: 0.85rem; padding: 6px 14px; white-space: nowrap; }
+  .row-end .btn:disabled { opacity: 0.45; cursor: default; }
+  .app-only { display: none !important; }
+
+  /* הסתרה / הצגה של בחירת התרגולים */
+  .section-toggle {
+    display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 2px 0;
+    margin-bottom: 10px; font: inherit; font-size: 0.95rem; font-weight: 600; color: #2c3e50; cursor: pointer;
+  }
+  .section-toggle:hover { color: #2980b9; }
+  .section-toggle .arrow-ic { display: inline-block; width: 1em; font-size: 0.85rem; }
+  .section-toggle[aria-expanded="false"] { margin-bottom: 0; }
+  .section-toggle .sel-count { font-weight: normal; font-size: 0.8rem; color: #888; }
+  #targolimSection[hidden] { display: none; }
 
   /* נתונים גולמיים */
   #rawCard[hidden] { display: none; }
@@ -205,13 +218,9 @@
     margin-top: 16px; color: #721c24; background: #f8d7da; border-radius: 8px;
     padding: 10px 14px; display: none; white-space: pre-line; text-align: right; font-size: 0.85rem;
   }
-  body.dragging .drop, body.dragging #topbar { border-color: #2980b9; background: #eef6fc; }
-  #topbar {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 0.85rem; color: #555;
-    background: #fff; border: 2px dashed transparent; border-radius: 10px; padding: 8px 14px;
-    margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-  }
-  #topbar[hidden] { display: none; }
+  body.dragging .drop { border-color: #2980b9; background: #eef6fc; }
+  body.dragging #report .filters { outline: 2px dashed #2980b9; outline-offset: 3px; background: #f5fafd; }
+  .app-only { display: inline-flex !important; align-items: center; }
   #drop[hidden] { display: none; }
 </style>
 
@@ -227,11 +236,6 @@
   <div class="cols">עמודות נדרשות: שם תלמיד, תרגול, תרגיל, סטטוס<br>
     מומלצות: כתה, שם משתמש, תרגיל2, תאריך פתיחה, ציון, ציון עבודה עצמית</div>
   <div id="dropErr" class="drop-err"></div>
-</div>
-<div id="topbar" hidden>
-  <span>קובץ: <b id="fileName"></b></span>
-  <label class="btn">טען קובץ אחר<input type="file" id="fileInput2" accept=".csv,text/csv,text/plain" hidden></label>
-  <span class="hint">אפשר גם לגרור קובץ חדש לכל מקום בדף</span>
 </div>
 
 <div id="report" hidden>
@@ -260,6 +264,10 @@
       <label class="ttl">הצג:</label>
       <label class="opt"><input type="radio" name="show" value="targol" checked> תרגולים</label>
       <label class="opt"><input type="radio" name="show" value="both"> תרגולים ותרגילים</label>
+    </div>
+    <div class="control-group row-end">
+      <label class="btn app-only" id="btnLoad" title="אפשר גם לגרור קובץ חדש לכל מקום בדף">📂 טען קובץ אחר<input type="file" id="fileInput2" accept=".csv,text/csv,text/plain" hidden></label>
+      <button class="btn" id="btnExport" title="שומר את הטבלה המוצגת כקובץ Excel — עם הסינונים והמיון הנוכחיים">⬇ ייצוא לאקסל</button>
     </div>
   </div>
 
@@ -293,31 +301,33 @@
     </div>
   </div>
 
-  <div class="controls-row" style="border-bottom:none; margin-bottom:6px; padding-bottom:0">
-    <div class="control-group">
-      <label class="ttl">טווח תרגולים:</label>
-      <label>מ-</label><select id="rangeFrom"></select>
-      <label>עד-</label><select id="rangeTo"></select>
+  <button class="section-toggle" id="btnTargolim" aria-expanded="true" aria-controls="targolimSection" title="הסתר את בחירת התרגולים">
+    <span class="arrow-ic">▾</span> בחירת תרגולים <span class="sel-count" id="selCount"></span>
+  </button>
+  <div id="targolimSection">
+    <div class="controls-row" style="border-bottom:none; margin-bottom:6px; padding-bottom:0">
+      <div class="control-group">
+        <label class="ttl">טווח תרגולים:</label>
+        <label>מ-</label><select id="rangeFrom"></select>
+        <label>עד-</label><select id="rangeTo"></select>
+      </div>
+    </div>
+
+    <h2>תרגולים:</h2>
+    <div class="filter-grid" id="filterGrid"></div>
+    <div id="exPanel"></div>
+    <div class="actions">
+      <button class="btn" id="btnAll">בחר הכל</button>
+      <button class="btn" id="btnNone">בטל הכל</button>
+      <button class="btn" id="btnReset">אפס בחירות ידניות</button>
+    </div>
+    <div class="hint" style="margin-top:8px">
+      לחיצה על תרגול — הצג/הסתר. תרגול מחוק (מתחת לסף) — לחיצה כוללת אותו ידנית.
+      כפתור "תרגילים" — בחירת התרגילים הנדרשים בתרגול.
     </div>
   </div>
-
-  <h2>תרגולים:</h2>
-  <div class="filter-grid" id="filterGrid"></div>
-  <div id="exPanel"></div>
-  <div class="actions">
-    <button class="btn" id="btnAll">בחר הכל</button>
-    <button class="btn" id="btnNone">בטל הכל</button>
-    <button class="btn" id="btnReset">אפס בחירות ידניות</button>
-  </div>
-  <div class="hint" style="margin-top:8px">
-    לחיצה על תרגול — הצג/הסתר. תרגול מחוק (מתחת לסף) — לחיצה כוללת אותו ידנית.
-    כפתור "תרגילים" — בחירת התרגילים הנדרשים בתרגול.
-  </div>
 </div>
 
-<div class="table-tools">
-  <button class="btn" id="btnExport" title="שומר את הטבלה המוצגת כקובץ Excel — עם הסינונים והמיון הנוכחיים">⬇ ייצוא לאקסל</button>
-</div>
 <div class="table-wrap" id="tableWrap"></div>
 <div class="summary" id="summary"></div>
 <div class="legend">
@@ -519,6 +529,21 @@ function doExport() {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 document.getElementById('btnExport').addEventListener('click', doExport);
+
+// הסתרה / הצגה של בחירת התרגולים (ברירת מחדל: מוצג)
+document.getElementById('btnTargolim').addEventListener('click', e => {
+  const btn = e.currentTarget, sec = document.getElementById('targolimSection');
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', String(open));
+  btn.querySelector('.arrow-ic').textContent = open ? '▾' : '◂';
+  btn.title = open ? 'הסתר את בחירת התרגולים' : 'הצג את בחירת התרגולים';
+  sec.hidden = !open;
+});
+function updateSelCount() {
+  const appl = D.targolim.filter(applicable).length;
+  const shown = visibleTargolim().length;
+  document.getElementById('selCount').textContent = `(${shown} מתוך ${appl} תרגולים בדוח)`;
+}
 const MULTI = D.classes.length > 1;
 const ST_NONE = 0, ST_OK = 1, ST_LATE = 2;
 const ST_LABEL = ['לא הוגש', 'הוגש', 'באיחור'];
@@ -714,6 +739,7 @@ function render() {
   computeRequirements();
   renderChips();
   renderPanel();
+  updateSelCount();
   renderTable();
   renderChart();
 }
@@ -1562,12 +1588,11 @@ async function loadFile(file) {
     const report = document.getElementById('report');
     report.innerHTML = REPORT_BODY;            // דוח נקי — בלי בחירות מהקובץ הקודם
     const base = file.name.replace(/\.[^.]+$/, '');
-    document.getElementById('reportTitle').textContent = `דוח הגשות — ${base}`;
+    const titleEl = document.getElementById('reportTitle');
+    titleEl.textContent = `דוח הגשות — ${base}`;
+    titleEl.title = `${file.name}: ${data.students.length} תלמידים, ${data.targolim.length} תרגולים`;
     document.title = `דוח הגשות — ${base}`;
-    document.getElementById('fileName').textContent =
-      `${file.name} (${data.students.length} תלמידים, ${data.targolim.length} תרגולים)`;
     document.getElementById('drop').hidden = true;
-    document.getElementById('topbar').hidden = false;
     report.hidden = false;
     startReport(data);
   } catch (e) {
@@ -1578,11 +1603,13 @@ async function loadFile(file) {
   }
 }
 
-for (const id of ['fileInput', 'fileInput2'])
-  document.getElementById(id).addEventListener('change', e => {
-    if (e.target.files[0]) loadFile(e.target.files[0]);
-    e.target.value = '';
-  });
+// בחירת קובץ — במסך הפתיחה, וכפתור "טען קובץ אחר" שבתוך הדוח
+// (הדוח נבנה מחדש בכל טעינה, לכן מאזינים ברמת המסמך)
+document.addEventListener('change', e => {
+  if (e.target.id !== 'fileInput' && e.target.id !== 'fileInput2') return;
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+  e.target.value = '';
+});
 
 // גרירה לכל מקום בדף
 let dragDepth = 0;
