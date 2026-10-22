@@ -49,6 +49,12 @@
   .filter-chip.out-range { opacity: 0.35; cursor: default; }
   .filter-chip.open { box-shadow: 0 0 0 3px #f1c40f66; }
   .chip-rate { font-size: 0.75rem; opacity: 0.75; text-decoration: none; }
+  .filter-chip.nodate::after { content: "ללא תאריך"; font-size: 0.68rem; color: #999; }
+  .controls-row input[type=date] {
+    font: inherit; font-size: 0.83rem; padding: 2px 6px; border: 1px solid #ccc; border-radius: 6px; color: #333;
+  }
+  .btn.sm { padding: 3px 10px; font-size: 0.8rem; }
+  .btn.sm:disabled, .controls-row input[type=date]:disabled { opacity: 0.45; cursor: default; }
   .chip-ex {
     font-size: 0.75rem; background: #fff; border-radius: 10px; padding: 1px 7px;
     color: #2980b9; border: 1px solid #c9d8e6; text-decoration: none;
@@ -331,6 +337,13 @@
         <label>מ-</label><select id="rangeFrom"></select>
         <label>עד-</label><select id="rangeTo"></select>
       </div>
+      <div class="control-sep"></div>
+      <div class="control-group" id="dateGroup" title="מסנן תרגולים לפי תאריך התרגול (תאריך פתיחה; אם אין — תאריך סיום; אם אין — ההגשה הראשונה)">
+        <label class="ttl">טווח תאריכים:</label>
+        <label>מ-</label><input type="date" id="dateFrom">
+        <label>עד-</label><input type="date" id="dateTo">
+        <button class="btn sm" id="dateClear" title="בטל את סינון התאריכים">נקה</button>
+      </div>
     </div>
 
     <h2>תרגולים:</h2>
@@ -404,6 +417,10 @@ function exportSettings() {
   rows.push(['ציון עבודה עצמית מינימלי', S.selfMin
     ? `${S.selfMin} (${S.selfAction === 'zero' ? 'תרגיל חשוד = 0' : 'סימון בלבד'})` : 'כבוי']);
   rows.push(['הורדה על איחור', S.late + '%']);
+  if (S.dFrom || S.dTo) {
+    const f = d => d ? d.toLocaleDateString('he-IL') : '—';
+    rows.push(['טווח תאריכים', `${f(S.dFrom)} עד ${f(S.dTo)} (תרגולים ללא תאריך לא מסוננים)`]);
+  }
   rows.push(['תרגולים בדוח', vis.join(', ')]);
   const manual = [];
   for (const k in exOverride) {
@@ -572,8 +589,16 @@ const S = {
   mode: 'simple', cls: 'all', measure: 'submit', show: 'targol', q: '',
   threshold: 0, selfMin: 0, selfAction: 'zero', late: 0,
   from: 0, to: D.targolim.length - 1,
+  dFrom: null, dTo: null,            // טווח תאריכים (Date) — null = ללא הגבלה
   sortCol: 'name', sortDir: 1, openT: null,
 };
+// תאריך כל תרגול כ-Date (או null אם אין בקובץ שום תאריך לתרגול)
+const T_DATE = {};
+for (const t of D.targolim) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((D.dates || {})[t] || '');
+  T_DATE[t] = m ? new Date(+m[3], +m[2] - 1, +m[1]) : null;
+}
+const DATE_SRC_LABEL = { open: 'נפתח', due: 'מועד הגשה', sub: 'הגשה ראשונה' };
 const selected = new Set(D.targolim);
 const exOverride = {};   // key(t, ex) -> 'in' | 'out'
 const tOverride  = {};   // t -> 'in'
@@ -636,7 +661,13 @@ function filteredStudents() {
   return q ? shownStudents().filter(s => s.name.includes(q)) : shownStudents();
 }
 function applicable(t) { return shownClasses().some(c => R[c][t]); }
-function inRange(t) { const i = D.targolim.indexOf(t); return i >= S.from && i <= S.to; }
+// בטווח = בטווח התרגולים, וגם בטווח התאריכים. תרגול ללא תאריך לא מסונן לפי תאריך.
+function inDates(t) {
+  const d = T_DATE[t];
+  if (!d) return true;
+  return (!S.dFrom || d >= S.dFrom) && (!S.dTo || d <= S.dTo);
+}
+function inRange(t) { const i = D.targolim.indexOf(t); return i >= S.from && i <= S.to && inDates(t); }
 function eligibleView(t) { return shownClasses().some(c => R[c][t] && R[c][t].elig); }
 function viewRate(t) {
   let sub = 0, tot = 0;
@@ -1030,7 +1061,7 @@ function onChartMove(e) {
 
   const t = c.vis[i];
   let h = `<div class="tt">${esc(t)}</div>`;
-  if (D.dates[t]) h += `<div class="muted">נפתח ${esc(D.dates[t])}</div>`;
+  if (D.dates[t]) h += `<div class="muted">${DATE_SRC_LABEL[(D.dateSrc || {})[t]] || 'תאריך'} ${esc(D.dates[t])}</div>`;
   h += `<div class="row"><span>ממוצע</span><b>${fmt(c.avg[i])}</b></div>`;
   if (best && !c.hl.has(best.s.id))
     h += `<div class="row"><span><span class="dot" style="background:#555"></span>${esc(best.s.name)}</span><b>${fmt(best.pts[i])}</b></div>`;
@@ -1333,7 +1364,11 @@ function renderChips() {
     if (S.openT === t) cls.push('open');
     let nEx = 0, nIn = 0;
     for (const c of shownClasses()) if (R[c][t]) { nEx += R[c][t].eligEx.length; nIn += R[c][t].eligEx.filter(Boolean).length; }
-    h += `<div class="${cls.join(' ')}" data-ti="${i}">${esc(t)}`
+    const dt = (D.dates || {})[t]
+      ? `${DATE_SRC_LABEL[(D.dateSrc || {})[t]] || 'תאריך'}: ${D.dates[t]}`
+      : 'ללא תאריך — לא מסונן לפי טווח התאריכים';
+    if (!T_DATE[t]) cls.push('nodate');
+    h += `<div class="${cls.join(' ')}" data-ti="${i}" title="${esc(dt)}">${esc(t)}`
        + ` <span class="chip-rate">${r1(viewRate(t))}%</span>`
        + ` <span class="chip-ex" data-ex="${i}" title="בחירת תרגילים נדרשים">תרגילים ${nIn}/${nEx} ▾</span></div>`;
   });
@@ -1414,6 +1449,26 @@ const onRange = () => {
   const f = +selFrom.value, t = +selTo.value;
   S.from = Math.min(f, t); S.to = Math.max(f, t); render();
 };
+
+// טווח תאריכים
+const dFromEl = document.getElementById('dateFrom'), dToEl = document.getElementById('dateTo');
+const known = D.targolim.map(t => T_DATE[t]).filter(Boolean).sort((a, b) => a - b);
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+if (!known.length) {
+  document.getElementById('dateGroup').title = 'אין תאריכים בקובץ — אי אפשר לסנן לפי תאריך';
+  [dFromEl, dToEl, document.getElementById('dateClear')].forEach(e => e.disabled = true);
+} else {
+  for (const e of [dFromEl, dToEl]) { e.min = iso(known[0]); e.max = iso(known[known.length - 1]); }
+}
+const parseIso = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+const onDates = () => {
+  let a = parseIso(dFromEl.value), b = parseIso(dToEl.value);
+  if (a && b && a > b) [a, b] = [b, a];
+  S.dFrom = a; S.dTo = b; render();
+};
+dFromEl.addEventListener('change', onDates);
+dToEl.addEventListener('change', onDates);
+document.getElementById('dateClear').addEventListener('click', () => { dFromEl.value = dToEl.value = ''; onDates(); });
 selFrom.addEventListener('change', onRange); selTo.addEventListener('change', onRange);
 
 document.getElementById('filterGrid').addEventListener('click', e => {
@@ -1491,7 +1546,8 @@ render();
 
 // ─── קריאת CSV בדפדפן — אותם כללים כמו בסקריפט הפייתון ───
 const COL = { cls: 'כתה', name: 'שם תלמיד', user: 'שם משתמש', targol: 'תרגול', topic: 'תרגיל',
-              ex: 'תרגיל2', open: 'תאריך פתיחה', status: 'סטטוס', grade: 'ציון', self: 'ציון עבודה עצמית' };
+              ex: 'תרגיל2', open: 'תאריך פתיחה', due: 'תאריך סיום', sub: 'תאריך הגשה',
+              status: 'סטטוס', grade: 'ציון', self: 'ציון עבודה עצמית' };
 const REQUIRED = [COL.name, COL.targol, COL.topic, COL.status];
 
 function parseCSV(text) {
@@ -1563,8 +1619,13 @@ function buildData(text) {
     if (!exercises.get(k).includes(ex)) exercises.get(k).push(ex);
 
     const d = parseDate(get(r, COL.open));
-    if (!tOrder.has(t)) tOrder.set(t, { d, i });
+    if (!tOrder.has(t)) tOrder.set(t, { d, i, due: null, sub: null });
     else { const o = tOrder.get(t); if (d && (!o.d || d < o.d)) o.d = d; }
+    const o = tOrder.get(t);
+    for (const k of ['due', 'sub']) {
+      const dd = parseDate(get(r, COL[k]));
+      if (dd && (!o[k] || dd < o[k])) o[k] = dd;
+    }
 
     if (!students.has(user)) students.set(user, { name, cls });
 
@@ -1586,15 +1647,20 @@ function buildData(text) {
     ex[c] = {};
     for (const t of targolim) { const e = exercises.get(c + '\u0001' + t); if (e) ex[c][t] = e; }
   }
-  const dates = {};
-  for (const t of targolim) dates[t] = fmtDate(tOrder.get(t).d);
+  // תאריך התרגול: תאריך פתיחה, ואם אין — תאריך סיום, ואם אין — ההגשה הראשונה
+  const dates = {}, dateSrc = {};
+  for (const t of targolim) {
+    const o = tOrder.get(t);
+    const [src, d] = o.d ? ['open', o.d] : o.due ? ['due', o.due] : o.sub ? ['sub', o.sub] : ['', null];
+    dates[t] = fmtDate(d); dateSrc[t] = src;
+  }
   const outStudents = [...students].map(([user, s]) => {
     const d = {};
     for (const [t, exs] of Object.entries(ex[s.cls]))
       d[t] = exs.map(e => cells.get(user + '\u0001' + t + '\u0001' + e) || [0, null, null]);
     return { name: s.name, cls: s.cls, d, raw: raw.get(user) };
   });
-  return { classes, targolim, dates, ex, students: outStudents, rawHead };
+  return { classes, targolim, dates, dateSrc, ex, students: outStudents, rawHead };
 }
 
 // קידוד: UTF-8, ואם לא — Windows-1255 (ייצוא CSV רגיל של Excel בעברית)
